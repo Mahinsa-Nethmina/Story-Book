@@ -116,8 +116,17 @@ class ProceduralAmbientEngine {
   private masterGain: GainNode | null = null;
   private activeProfileId: AmbientPresetId | null = null;
   private isRunning = false;
+  private targetVolume = 0.75; // 0..1 user mixer level
   private timers: number[] = [];
   private activeNodes: AudioNode[] = [];
+
+  public setVolume(level: number): void {
+    this.targetVolume = Math.max(0, Math.min(1, level));
+    if (this.masterGain && this.ctx) {
+      const gainVal = Math.max(0.0001, this.targetVolume * 0.24);
+      this.masterGain.gain.setTargetAtTime(gainVal, this.ctx.currentTime, 0.08);
+    }
+  }
 
   private ensureContext(): AudioContext | null {
     if (typeof window === "undefined") return null;
@@ -171,8 +180,9 @@ class ProceduralAmbientEngine {
     this.activeProfileId = profile.id;
 
     const master = ctx.createGain();
+    const targetGain = Math.max(0.001, this.targetVolume * 0.24);
     master.gain.setValueAtTime(0.001, ctx.currentTime);
-    master.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.8);
+    master.gain.exponentialRampToValueAtTime(targetGain, ctx.currentTime + 0.8);
     master.connect(ctx.destination);
     this.masterGain = master;
     this.activeNodes.push(master);

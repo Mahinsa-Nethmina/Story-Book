@@ -542,84 +542,100 @@ body,
   align-items: center;
   font-family: var(--font-cinzel);
   font-size: 11px;
-  letter-spacing: 0.125em;
+  letter-spacing: 0.115em;
   text-transform: uppercase;
   color: var(--folio-muted);
-  opacity: 0.48;
+  opacity: 0.96;
   transition: opacity 0.22s ease;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
 }
 
 .austen-margin-bar:hover,
 .austen-margin-bar:focus-within {
-  opacity: 0.95;
+  opacity: 1;
 }
 
 .austen-margin-link {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-family: var(--font-cinzel);
-  font-size: 11px;
-  letter-spacing: 0.125em;
-  text-transform: uppercase;
-  color: var(--folio-muted);
+  gap: 6px;
+  background-color: var(--folio-card);
+  border: 1px solid var(--folio-rule);
+  border-radius: 5px;
+  padding: 5px 11px;
+  font-family: var(--font-modernist);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--folio-ink);
+  box-shadow: 0 1px 2px rgba(30, 27, 24, 0.05);
   cursor: pointer;
-  transition: color 0.16s ease;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .austen-margin-link svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
 }
 
 .austen-margin-link:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--folio-ink) 8%, var(--folio-card));
+  border-color: color-mix(in srgb, var(--folio-ink) 35%, var(--folio-rule));
   color: var(--folio-ink);
+  box-shadow: 0 2px 4px rgba(30, 27, 24, 0.08);
 }
 
 .austen-margin-link.is-active {
-  color: var(--folio-accent);
+  background-color: var(--folio-ink);
+  border-color: var(--folio-ink);
+  color: var(--folio-paper);
+}
+
+.austen-margin-link.is-active:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--folio-ink) 85%, var(--folio-muted));
+  color: var(--folio-paper);
 }
 
 .austen-margin-link:disabled {
-  opacity: 0.35;
+  opacity: 0.38;
   cursor: default;
+  box-shadow: none;
 }
 
 .austen-margin-select {
   appearance: none;
   -webkit-appearance: none;
-  background: transparent;
-  border: none;
-  border-bottom: 1px dotted var(--folio-rule);
-  padding: 0 2px 1px;
-  font-family: var(--font-cinzel);
-  font-size: 11px;
-  letter-spacing: 0.125em;
-  text-transform: uppercase;
-  color: var(--folio-accent);
+  background-color: var(--folio-card);
+  border: 1px solid var(--folio-rule);
+  border-radius: 5px;
+  padding: 5px 11px;
+  font-family: var(--font-modernist);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--folio-ink);
+  box-shadow: 0 1px 2px rgba(30, 27, 24, 0.05);
   cursor: pointer;
   outline: none;
-  transition: color 0.16s ease, border-color 0.16s ease;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
 }
 
 .austen-margin-select:hover,
 .austen-margin-select:focus {
+  background-color: color-mix(in srgb, var(--folio-ink) 8%, var(--folio-card));
   color: var(--folio-ink);
-  border-bottom-style: solid;
-  border-bottom-color: var(--folio-accent);
+  border-color: color-mix(in srgb, var(--folio-ink) 35%, var(--folio-rule));
 }
 
 .austen-margin-select option {
   background-color: var(--folio-paper);
   color: var(--folio-ink);
-  font-family: var(--font-garamond);
-  font-size: 14px;
+  font-family: var(--font-modernist);
+  font-size: 13px;
   text-transform: none;
   letter-spacing: normal;
 }
@@ -790,6 +806,196 @@ body,
   padding: 4px;
   flex-shrink: 0;
 }
+
+/* ============================================================================
+   INTERACTIVE CHAPTER SCRUBBER BAR (ALONG RIGHT-PAGE FOOTER RULE)
+   ============================================================================ */
+.austen-scrubber-track {
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  z-index: 5;
+}
+
+.austen-scrubber-rail {
+  width: 100%;
+  height: 2px;
+  background-color: var(--folio-rule);
+  position: relative;
+  transition: height 0.15s ease;
+}
+
+.austen-scrubber-track:hover .austen-scrubber-rail {
+  height: 4px;
+}
+
+.austen-scrubber-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background-color: var(--folio-accent);
+  transition: width 0.12s linear;
+}
+
+.austen-scrubber-tick {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 8px;
+  background-color: var(--folio-muted);
+  opacity: 0.65;
+}
+
+.austen-scrubber-thumb {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  background-color: var(--folio-accent);
+  border: 1.5px solid var(--folio-paper);
+  transform: translate(-50%, -50%) rotate(45deg);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.austen-scrubber-track:hover .austen-scrubber-thumb {
+  opacity: 1;
+}
+
+/* ============================================================================
+   MARGINALIA GLOSSARY ANNOTATIONS & POPOVER NOTE
+   ============================================================================ */
+.austen-marginalia-term {
+  border-bottom: 1.5px dotted var(--folio-accent);
+  cursor: help;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  padding: 0 1px;
+}
+
+.austen-marginalia-term:hover,
+.austen-marginalia-term.is-active {
+  background-color: color-mix(in srgb, var(--folio-accent) 14%, var(--folio-paper));
+  color: var(--folio-ink);
+}
+
+.austen-marginalia-card {
+  margin-top: 10px;
+  background-color: var(--folio-card);
+  border: 1px solid var(--folio-rule);
+  border-left: 3px solid var(--folio-accent);
+  padding: 10px 14px;
+  animation: titleCardFadeIn 0.18s ease-out;
+}
+
+/* ============================================================================
+   BOOKMARK RIBBON & COMMONPLACE QUOTE SAVING
+   ============================================================================ */
+.austen-turn-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.austen-turn-bookmark-btn {
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  color: var(--folio-muted);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.16s ease, color 0.16s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-modernist);
+  font-size: 10.5px;
+}
+
+.austen-turn-block:hover .austen-turn-bookmark-btn,
+.austen-turn-bookmark-btn.is-saved {
+  opacity: 0.9;
+}
+
+.austen-turn-bookmark-btn.is-saved {
+  color: var(--folio-accent);
+}
+
+.austen-turn-bookmark-btn:hover {
+  opacity: 1 !important;
+  color: var(--folio-ink);
+}
+
+/* ============================================================================
+   PLATE STAGE ZOOM LOUPE BUTTON
+   ============================================================================ */
+.austen-plate-zoom-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background-color: color-mix(in srgb, var(--folio-paper) 90%, transparent);
+  border: 1px solid var(--folio-rule);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: var(--font-modernist);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--folio-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 0;
+  transition: opacity 0.18s ease, background-color 0.18s ease;
+  cursor: pointer;
+  z-index: 4;
+}
+
+.austen-plate-stage:hover .austen-plate-zoom-btn,
+.austen-plate-zoom-btn:focus-visible {
+  opacity: 0.95;
+}
+
+.austen-plate-zoom-btn:hover {
+  background-color: var(--folio-paper);
+}
+
+/* ============================================================================
+   PLAYBACK SPEED & AUDIO MIXER PANEL
+   ============================================================================ */
+.austen-mixer-panel {
+  width: 100%;
+  max-width: 1800px;
+  margin: 8px auto 0;
+  background-color: var(--folio-card);
+  border: 1px solid var(--folio-rule);
+  padding: 5px;
+  animation: titleCardFadeIn 0.2s ease-out;
+}
+
+.austen-mixer-inner {
+  background-color: var(--folio-paper);
+  border: 1px solid var(--folio-rule);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+}
+
+.austen-mixer-slider {
+  accent-color: var(--folio-ink);
+  cursor: pointer;
+  width: 96px;
+}
+
 
 
 /* Spine-hinged leaf flip animation when turning folios or opening a volume */
@@ -1162,4 +1368,95 @@ body,
     padding: 14px;
   }
 }
+
+/* ============================================================================
+   SPECIALIZED PRINT STYLESHEET FOR PHYSICAL PAPER FOLIO OUTPUT
+   Formats the currently viewed two-page spread cleanly and strips all UI chrome,
+   navigation buttons, sound toggles, cast strip, and modal overlays.
+   ============================================================================ */
+@media print {
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body,
+  #root,
+  .archival-paper-surface,
+  .austen-spread-viewport {
+    background-color: var(--folio-paper) !important;
+    color: var(--folio-ink) !important;
+    min-height: auto !important;
+    height: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Remove all interactive elements, navigation bars, sound toggles, cast strip, and modals */
+  .austen-margin-bar,
+  .austen-cast-strip,
+  .austen-cast-bio-panel,
+  .folio-modal-backdrop,
+  .austen-speaker-band button,
+  .austen-progress-filament {
+    display: none !important;
+  }
+
+  .austen-open-book {
+    max-width: 100% !important;
+    min-height: auto !important;
+    grid-template-columns: 50% 50% !important;
+    border-top: 1px solid var(--folio-rule) !important;
+    border-bottom: 1px solid var(--folio-rule) !important;
+    background-image: none !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .austen-left-page {
+    border-right: 1px solid var(--folio-rule) !important;
+    border-bottom: none !important;
+    padding: 12px 24px 12px 4px !important;
+  }
+
+  .austen-right-page {
+    padding: 12px 4px 12px 24px !important;
+  }
+
+  .austen-folio-body::before,
+  .austen-folio-body::after {
+    display: none !important;
+  }
+
+  .austen-folio-body {
+    padding: 14px 0 !important;
+    font-size: 13pt !important;
+  }
+
+  /* Ensure all narrative and dialogue turns print in full legible archival ink */
+  .austen-turn-block.state-active .austen-turn-text,
+  .austen-turn-block.state-past .austen-turn-text,
+  .austen-turn-block.state-future .austen-turn-text {
+    color: var(--folio-ink) !important;
+  }
+
+  .austen-turn-block.state-active .austen-turn-rubric,
+  .austen-turn-block.state-past .austen-turn-rubric,
+  .austen-turn-block.state-future .austen-turn-rubric {
+    color: var(--folio-accent) !important;
+  }
+
+  .austen-plate-number {
+    pointer-events: none !important;
+  }
+}
+
 

@@ -175,6 +175,62 @@ const CURATED_CHARACTER_BIOS: Record<string, CuratedCharacterMeta> = {
     portraitScale: 2.05,
     aliases: ["Tom Sawyer", "Tom", "TOM"],
   },
+
+  // Sri Lankan Sinhala Storybooks (මහදැනමුත්තා, අන්දරේ, මඩොල් දූව, ගුත්තිල ජාතකය)
+  mahadenamutta: {
+    shortTitle: "මහදැනමුත්තා · The Village Sage of the Ola-Leaf Book",
+    bio: "A beloved archetype of Sri Lankan Sinhala folklore: an elderly, self-important sage who never makes a practical decision without consulting his inherited palm-leaf manuscript (puskola potha), leading his five disciples into comical misadventures.",
+    dramaticNote:
+      "Solemnly consults his puskola potha and decrees that the villager’s goat must be beheaded first and the clay pot smashed afterward.",
+    portraitObjectPosition: "32% 30%",
+    portraitScale: 1.75,
+    aliases: ["මහදැනමුත්තා", "Mahadenamutta"],
+  },
+  polbaa_muna: {
+    shortTitle: "පොල්බෑ මූණා · Chief Disciple of Mahadenamutta",
+    bio: "Named “Half-Coconut Face,” he is the most earnest and literal-minded of Mahadenamutta’s five disciples, reverently carrying out his master’s absurd instructions to the letter.",
+    dramaticNote:
+      "Implores Mahadenamutta to open the sacred palm-leaf manuscript to rescue the goat trapped in the clay pot.",
+    portraitObjectPosition: "68% 30%",
+    portraitScale: 1.75,
+    aliases: ["පොල්බෑ මූණා", "Polbää Muna"],
+  },
+  andare: {
+    shortTitle: "අන්දරේ · Royal Court Jester of Kandy",
+    bio: "The legendary 18th-century Sinhala poet and court wit from southern Sri Lanka who served in the Kandyan King’s Kavikara Maduwa. Famous for his quick-thinking pranks, improvised verses, and fearless humour before the throne.",
+    dramaticNote:
+      "Turns the King’s claim that the drying palace sugar is “white courtyard sand” into an excuse for him and his son to feast upon it with both hands.",
+    portraitObjectPosition: "32% 30%",
+    portraitScale: 1.75,
+    aliases: ["අන්දරේ", "Andare"],
+  },
+  upali_narrator: {
+    shortTitle: "උපාලි ගිනිවැල්ල · Hero of Martin Wickramasinghe’s Madol Doova",
+    bio: "The spirited, independent-minded young protagonist from a southern coastal village in Sri Lanka who rebels against stuffy schoolroom routine and sets out across Koggala lagoon to build a self-reliant life on the uninhabited island of Madol Doova.",
+    dramaticNote:
+      "Steers the outrigger canoe across the tranquil Koggala waters toward the mangrove-fringed island.",
+    portraitObjectPosition: "32% 30%",
+    portraitScale: 1.75,
+    aliases: ["උපාලි", "Upali"],
+  },
+  jinapala: {
+    shortTitle: "ජිනපාල · Loyal Companion on Madol Doova",
+    bio: "Upali Ginivella’s steadfast childhood friend and partner in adventure. Practical, courageous, and resourceful, he helps transform the wild mangrove island of Madol Doova into a thriving homestead.",
+    dramaticNote:
+      "Dismisses the villagers’ superstitions about island ghosts and celebrates Madol Doova as their new sanctuary.",
+    portraitObjectPosition: "68% 30%",
+    portraitScale: 1.75,
+    aliases: ["ජිනපාල", "Jinapala"],
+  },
+  master_guttila: {
+    shortTitle: "ගුත්තිල ඇදුරිඳු · Bodhisattva Master of the Seven-Stringed Veena",
+    bio: "The supreme court musician of Udeni and hero of Wättäwe Thero’s 15th-century classical Sinhala poem Guttila Kavya. Renowned for his generosity, filial piety, and transcendent mastery of the seven-stringed veena.",
+    dramaticNote:
+      "Snaps the strings of his veena one by one during the royal contest, drawing forth celestial music from the bare instrument through pure spiritual grace.",
+    portraitObjectPosition: "32% 30%",
+    portraitScale: 1.75,
+    aliases: ["ගුත්තිල", "Guttila"],
+  },
 };
 
 function normalizeSpeakerKey(raw: string): string {

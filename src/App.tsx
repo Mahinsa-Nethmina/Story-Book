@@ -20,10 +20,21 @@ import {
 } from "./services/storybookAgentService";
 import { downloadStorybookPdf } from "./services/folioExporter";
 import {
+  ALL_SINHALA_STORYBOOKS,
+  SINHALA_STORY_CATEGORIES,
+} from "./data/sinhalaStories";
+import {
   ambientSoundEngine,
   resolveSceneAmbientProfile,
 } from "./services/ambientSoundService";
 import { getFolioCharacterCast } from "./services/characterCastService";
+import {
+  MarginaliaNote,
+  READING_LIGHTING_MODES,
+  ReadingLightingMode,
+  resolveLightingPalette,
+  segmentTextWithMarginalia,
+} from "./services/marginaliaService";
 import { AgentLogEntry, Storybook, StorybookPalette } from "./types";
 
 interface VisitedFolioCrumb {
@@ -36,6 +47,20 @@ interface VisitedFolioCrumb {
   caption: string;
 }
 
+interface SavedCommonplaceQuote {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  author: string;
+  roman: string;
+  pageIdx: number;
+  turnIdx: number;
+  folioCode: string;
+  speaker: string;
+  text: string;
+  savedAt: string;
+}
+
 type ReaderBodyFont = "classic-garamond" | "clean-modernist" | "typewriter-mono";
 
 const READER_BODY_FONT_OPTIONS: { id: ReaderBodyFont; label: string }[] = [
@@ -44,7 +69,9 @@ const READER_BODY_FONT_OPTIONS: { id: ReaderBodyFont; label: string }[] = [
   { id: "typewriter-mono", label: "Typewriter Mono" },
 ];
 
-const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI"];
+const PLAYBACK_SPEED_OPTIONS = [0.85, 1.0, 1.15, 1.25];
+
+const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 
 const PIPELINE_STAGES = [
   {
@@ -227,13 +254,16 @@ export default function App() {
   const [showAgentSpecModal, setShowAgentSpecModal] = useState<boolean>(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
 
-  // Active Storybook & Classic Library
+  // Active Storybook & Classic + Sri Lankan Sinhala Library
   const [storybook, setStorybook] = useState<Storybook>(() =>
     ensureBookTimeline(INITIAL_SHOWCASE_STORYBOOK)
   );
   const [library, setLibrary] = useState<Storybook[]>(() =>
-    ALL_CLASSIC_STORYBOOKS.map(ensureBookTimeline)
+    [...ALL_CLASSIC_STORYBOOKS, ...ALL_SINHALA_STORYBOOKS].map(ensureBookTimeline)
   );
+  const [coverCollectionTab, setCoverCollectionTab] = useState<"all" | "classic" | "sinhala">("all");
+  const [selectedSinhalaCategoryId, setSelectedSinhalaCategoryId] = useState<string>("all");
+
   const [currentPageIdx, setCurrentPageIdx] = useState<number>(0);
   // activeLineIdx: -1 = pre-speech (all turns on folio in state-future 38% ink),
   // 0..N-1 = currently spoken turn in state-active 100% ink,
@@ -244,6 +274,39 @@ export default function App() {
   const [folioHistory, setFolioHistory] = useState<VisitedFolioCrumb[]>([]);
   const [selectedCastCharacterId, setSelectedCastCharacterId] = useState<string | null>(null);
   const [readerBodyFont, setReaderBodyFont] = useState<ReaderBodyFont>("classic-garamond");
+
+  // 6 New Reader Enhancements State:
+  // 1. Playback Speed & Audio Mixer
+  const [showMixerPanel, setShowMixerPanel] = useState<boolean>(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+  const [voiceVolume, setVoiceVolume] = useState<number>(1.0);
+  const [musicVolume, setMusicVolume] = useState<number>(0.18);
+  const [ambientVolume, setAmbientVolume] = useState<number>(0.75);
+
+  // 2. Interactive Marginalia & Period Glossary
+  const [activeMarginalia, setActiveMarginalia] = useState<{
+    turnIdx: number;
+    note: MarginaliaNote;
+  } | null>(null);
+
+  // 3. Commonplace Book (Bookmarks & Favorite Quotes)
+  const [savedQuotes, setSavedQuotes] = useState<SavedCommonplaceQuote[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem("folio_press_commonplace_quotes");
+      return raw ? (JSON.parse(raw) as SavedCommonplaceQuote[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showCommonplaceModal, setShowCommonplaceModal] = useState<boolean>(false);
+
+  // 4. Candlelight / Evening Sepia / Midnight Reading Mode
+  const [lightingMode, setLightingMode] = useState<ReadingLightingMode>("daylight");
+
+  // 5. Full-Screen Plate Lightbox & Zoom Loupe
+  const [showPlateLightbox, setShowPlateLightbox] = useState<boolean>(false);
+  const [lightboxZoom, setLightboxZoom] = useState<number>(1);
 
   // Commission Folio State
   const [commissionPrompt, setCommissionPrompt] = useState<string>(
@@ -283,15 +346,25 @@ export default function App() {
   const showOpeningTitleCardRef = useRef<boolean>(false);
   const lastSpokenTurnKeyRef = useRef<string>("");
 
+  const playbackSpeedRef = useRef<number>(1.0);
+  const voiceVolumeRef = useRef<number>(1.0);
+  playbackSpeedRef.current = playbackSpeed;
+  voiceVolumeRef.current = voiceVolume;
+
   currentPageIdxRef.current = currentPageIdx;
   activeLineIdxRef.current = activeLineIdx;
   showOpeningTitleCardRef.current = showOpeningTitleCard;
 
-  // Active Palette CSS Variables
-  const activePalette: StorybookPalette =
+  // Active Palette CSS Variables (with Daylight / Candlelight / Midnight lighting filter)
+  const basePalette: StorybookPalette =
     viewMode === "cover"
       ? EDITION_PALETTES[selectedPaletteKey]?.palette || EDITION_PALETTES.regency.palette
       : storybook.palette || EDITION_PALETTES.regency.palette;
+
+  const activePalette: StorybookPalette = resolveLightingPalette(
+    basePalette,
+    viewMode === "reader" ? lightingMode : "daylight"
+  );
 
   const paletteCssVars = {
     "--folio-paper": activePalette.paper,
@@ -380,10 +453,41 @@ export default function App() {
   useEffect(() => {
     if (isAmbientSoundEnabled && viewMode === "reader") {
       ambientSoundEngine.start(activeAmbientProfile);
+      ambientSoundEngine.setVolume(ambientVolume);
     } else {
       ambientSoundEngine.stop();
     }
   }, [isAmbientSoundEnabled, viewMode, activeAmbientProfile]);
+
+  // Synchronize Audio Mixer sliders & playback speed with active audio elements
+  useEffect(() => {
+    const masterEl = getMasterAudioEl();
+    if (masterEl) {
+      masterEl.volume = Math.max(0, Math.min(1, voiceVolume));
+      masterEl.playbackRate = playbackSpeed;
+    }
+    const musicEl = getMusicAudioEl();
+    if (musicEl) {
+      musicEl.volume = Math.max(0, Math.min(1, musicVolume));
+    }
+    ambientSoundEngine.setVolume(ambientVolume);
+  }, [voiceVolume, musicVolume, ambientVolume, playbackSpeed]);
+
+  // Persist Commonplace Book quotes to localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        "folio_press_commonplace_quotes",
+        JSON.stringify(savedQuotes)
+      );
+    } catch {}
+  }, [savedQuotes]);
+
+  // Clear inline marginalia card when switching folios
+  useEffect(() => {
+    setActiveMarginalia(null);
+  }, [currentPageIdx, storybook.id]);
 
   // Track folios read in the current session as a breadcrumb trail
   useEffect(() => {
@@ -434,7 +538,10 @@ export default function App() {
 
       if (!bookParam && !folioParam && !turnParam) return;
 
-      let matchedBook: Storybook | undefined = ALL_CLASSIC_STORYBOOKS.find(
+      let matchedBook: Storybook | undefined = [
+        ...ALL_CLASSIC_STORYBOOKS,
+        ...ALL_SINHALA_STORYBOOKS,
+      ].find(
         (b) =>
           b.id === bookParam ||
           (bookParam && b.id.toLowerCase().includes(bookParam.toLowerCase()))
@@ -543,14 +650,15 @@ export default function App() {
           } catch {}
         };
       }
-      masterEl.volume = 1.0;
+      masterEl.volume = Math.max(0, Math.min(1, voiceVolumeRef.current));
+      masterEl.playbackRate = playbackSpeedRef.current;
       masterEl.play().catch(() => {
         // If browser autoplay blocks unmuted playback before gesture, virtualClockRef still drives visual highlighting
       });
     } else if (musicEl && isMusicEnabled && normalized.backgroundMusicUrl) {
       if (masterEl) masterEl.pause();
       musicEl.src = normalized.backgroundMusicUrl;
-      musicEl.volume = 0.16;
+      musicEl.volume = Math.max(0, Math.min(1, musicVolume));
       musicEl.play().catch(() => {});
     }
 
@@ -582,7 +690,7 @@ export default function App() {
         tSec = masterEl.currentTime;
         virtualClockRef.current = tSec;
       } else {
-        tSec = virtualClockRef.current + dtSec;
+        tSec = virtualClockRef.current + dtSec * playbackSpeedRef.current;
         virtualClockRef.current = tSec;
       }
 
@@ -673,7 +781,7 @@ export default function App() {
         activeLineIdxRef.current = targetLineIdx;
         setActiveLineIdx(targetLineIdx);
 
-        // If this is a custom commissioned book without a single masterAudioUrl, speak the active turn
+        // If this is a custom commissioned book or Sinhala storybook without a single masterAudioUrl, speak the active turn
         if (
           !storybook.masterAudioUrl &&
           targetLineIdx >= 0 &&
@@ -685,14 +793,31 @@ export default function App() {
             const line = fLines[targetLineIdx];
             if (line.audioDataUrl && masterEl) {
               masterEl.src = line.audioDataUrl;
+              masterEl.volume = Math.max(0, Math.min(1, voiceVolumeRef.current));
+              masterEl.playbackRate = playbackSpeedRef.current;
               masterEl.play().catch(() => {});
             } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
               try {
                 window.speechSynthesis.cancel();
-                const utter = new SpeechSynthesisUtterance(
+                const spokenText = (
                   line.ttsText || line.text.replace(/[“”"]/g, "")
-                );
-                utter.rate = 0.98;
+                ).trim();
+                const utter = new SpeechSynthesisUtterance(spokenText);
+                const hasSinhala = /[\u0D80-\u0DFF]/.test(spokenText);
+                const voices = window.speechSynthesis.getVoices?.() || [];
+                if (hasSinhala) {
+                  utter.lang = "si-LK";
+                  const siVoice = voices.find((v) =>
+                    v.lang?.toLowerCase().startsWith("si")
+                  );
+                  if (siVoice) {
+                    utter.voice = siVoice;
+                  }
+                } else {
+                  utter.lang = "en-GB";
+                }
+                utter.rate = Math.max(0.6, Math.min(1.6, 0.96 * playbackSpeedRef.current));
+                utter.volume = Math.max(0, Math.min(1, voiceVolumeRef.current));
                 window.speechSynthesis.speak(utter);
               } catch {}
             }
@@ -1048,6 +1173,31 @@ export default function App() {
     }
   };
 
+  // Trigger the specialized CSS @media print stylesheet to print the currently viewed folio
+  const handlePrintFolio = () => {
+    if (typeof window === "undefined") return;
+    if (isPlayingAudio) {
+      stopAllPlayback();
+    }
+    if (showOpeningTitleCard) {
+      setShowOpeningTitleCard(false);
+      showOpeningTitleCardRef.current = false;
+    }
+    setSelectedCastCharacterId(null);
+    setShowShortcutsModal(false);
+    setShowTitleCardModal(false);
+    setShowAgentSpecModal(false);
+    setStatusNote(
+      `Printing Folio ${storybook.roman || "I"}.${currentPageIdx + 1}…`
+    );
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch {}
+      setStatusNote(null);
+    }, 120);
+  };
+
   // Copy a deep-link to the current storybook, folio page, and dialogue turn to the user's clipboard
   const handleShareFolio = async () => {
     if (typeof window === "undefined") return;
@@ -1107,6 +1257,127 @@ export default function App() {
     }, 3200);
   };
 
+  // Interactive Chapter Scrubber Bar: click anywhere on the right-page footer progress rule to seek
+  const handleScrubberSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const targetSec = titleEndSec + ratio * Math.max(1, totalDurSec - titleEndSec);
+
+    const pages = storybook.pages || [];
+    let targetPageIdx = 0;
+    for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+      if (targetSec >= (pages[pIdx].startSec ?? 0)) {
+        targetPageIdx = pIdx;
+      } else {
+        break;
+      }
+    }
+
+    const lines = pages[targetPageIdx]?.dialogueLines || [];
+    let targetTurnIdx = 0;
+    for (let lIdx = 0; lIdx < lines.length; lIdx++) {
+      if (targetSec >= (lines[lIdx].startSec ?? 0)) {
+        targetTurnIdx = lIdx;
+      } else {
+        break;
+      }
+    }
+
+    seekToFolioAndTurn(targetPageIdx, targetTurnIdx);
+    setStatusNote(
+      `Scrubbed to ${formatTimecode(targetSec)} · Folio ${
+        storybook.roman || "I"
+      }.${targetPageIdx + 1}`
+    );
+    setTimeout(() => setStatusNote(null), 2400);
+  };
+
+  // Toggle saving or removing a paragraph quote in the Commonplace Book
+  const handleToggleSaveQuote = (
+    e: React.MouseEvent,
+    pageIdx: number,
+    turnIdx: number
+  ) => {
+    e.stopPropagation();
+    const page = storybook.pages[pageIdx] || storybook.pages[0];
+    const line = page?.dialogueLines?.[turnIdx];
+    if (!line) return;
+
+    const quoteId = `${storybook.id}:${pageIdx}:${turnIdx}`;
+    const folioCode = `${storybook.roman || "I"}.${pageIdx + 1}`;
+    const exists = savedQuotes.some((q) => q.id === quoteId);
+
+    if (exists) {
+      setSavedQuotes((prev) => prev.filter((q) => q.id !== quoteId));
+      setStatusNote(`Removed Folio ${folioCode} quote from Commonplace Book`);
+    } else {
+      const entry: SavedCommonplaceQuote = {
+        id: quoteId,
+        bookId: storybook.id,
+        bookTitle: storybook.title,
+        author: storybook.author,
+        roman: storybook.roman || "I",
+        pageIdx,
+        turnIdx,
+        folioCode,
+        speaker: line.speakerLabel || line.speaker || "Narrator",
+        text: line.text,
+        savedAt: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+      setSavedQuotes((prev) => [entry, ...prev]);
+      setStatusNote(`Inscribed Folio ${folioCode} quote in Commonplace Book`);
+    }
+    setTimeout(() => setStatusNote(null), 2600);
+  };
+
+  // Jump directly to a saved quote from the Commonplace Book
+  const handleJumpToSavedQuote = (quote: SavedCommonplaceQuote) => {
+    setShowCommonplaceModal(false);
+    if (quote.bookId === storybook.id && viewMode === "reader") {
+      seekToFolioAndTurn(quote.pageIdx, quote.turnIdx);
+      setStatusNote(`Opened saved passage · Folio ${quote.folioCode}`);
+      setTimeout(() => setStatusNote(null), 2600);
+      return;
+    }
+
+    const matchedBook =
+      library.find((b) => b.id === quote.bookId) || storybook;
+    const normalized = ensureBookTimeline(matchedBook);
+    const targetPage = normalized.pages[quote.pageIdx] || normalized.pages[0];
+    const targetLine = targetPage?.dialogueLines?.[quote.turnIdx];
+    const startSec =
+      targetLine?.startSec ?? targetPage?.startSec ?? 5.4;
+
+    stopAllPlayback();
+    setStorybook(normalized);
+    currentPageIdxRef.current = quote.pageIdx;
+    activeLineIdxRef.current = quote.turnIdx;
+    setCurrentPageIdx(quote.pageIdx);
+    setActiveLineIdx(quote.turnIdx);
+    setManualPlateIdx(null);
+    setIsPageTurning(true);
+    setViewMode("reader");
+    setTimeout(() => setIsPageTurning(false), 650);
+    startBookNarration(normalized, startSec, false);
+    setStatusNote(`Opened ${normalized.title} · Folio ${quote.folioCode}`);
+    setTimeout(() => setStatusNote(null), 2800);
+  };
+
+  // Cycle Reading Lighting Mode (Daylight Cream -> Candlelight Amber -> Midnight Vellum)
+  const handleCycleLightingMode = () => {
+    const order: ReadingLightingMode[] = ["daylight", "candlelight", "midnight"];
+    const nextIdx = (order.indexOf(lightingMode) + 1) % order.length;
+    const nextMode = order[nextIdx];
+    setLightingMode(nextMode);
+    const modeInfo = READING_LIGHTING_MODES.find((m) => m.id === nextMode);
+    setStatusNote(`Lighting: ${modeInfo?.label || nextMode}`);
+    setTimeout(() => setStatusNote(null), 2400);
+  };
+
   // Keyboard navigation in Reader mode (←/→/↑/↓ for turns & folios, Space for play/pause, P for plates, M for music, ? for shortcuts, Esc to close)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1123,12 +1394,20 @@ export default function App() {
           showShortcutsModal ||
           showTitleCardModal ||
           showAgentSpecModal ||
+          showCommonplaceModal ||
+          showPlateLightbox ||
+          showMixerPanel ||
+          activeMarginalia ||
           selectedCastCharacterId
         ) {
           e.preventDefault();
           setShowShortcutsModal(false);
           setShowTitleCardModal(false);
           setShowAgentSpecModal(false);
+          setShowCommonplaceModal(false);
+          setShowPlateLightbox(false);
+          setShowMixerPanel(false);
+          setActiveMarginalia(null);
           setSelectedCastCharacterId(null);
         }
         return;
@@ -1279,51 +1558,208 @@ export default function App() {
                     style={{
                       fontFamily: "var(--font-garamond)",
                       fontStyle: "italic",
-                      fontSize: "clamp(21px, 1.55vw, 27px)",
+                      fontSize: "clamp(19px, 1.45vw, 25px)",
                       color: "var(--folio-ink)",
                     }}
                   >
-                    Five volumes bound, and a sixth left blank for you
+                    Nine volumes bound — World Classics &amp; Sri Lankan Sinhala Literature (සිංහල කතා)
                   </div>
                 </div>
 
-                {/* Classic Typographic Table of Contents (replaces boxed cards) */}
+                {/* Categorized Table of Contents: World Classics & Sri Lankan Sinhala Stories */}
                 <div className="folio-contents-section">
                   <div
-                    className="austen-turn-rubric"
                     style={{
-                      color: "var(--folio-accent)",
-                      marginBottom: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                      marginBottom: "8px",
                     }}
                   >
-                    CONTENTS — CLICK ANY VOLUME TO OPEN &amp; AUTO-NARRATE
+                    <div
+                      className="austen-turn-rubric"
+                      style={{
+                        color: "var(--folio-accent)",
+                        marginBottom: 0,
+                      }}
+                    >
+                      CONTENTS — CLICK ANY VOLUME TO OPEN &amp; AUTO-NARRATE
+                    </div>
+
+                    <div style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setCoverCollectionTab("all")}
+                        className={`austen-margin-link ${
+                          coverCollectionTab === "all" ? "is-active" : ""
+                        }`}
+                      >
+                        All ({library.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCoverCollectionTab("classic")}
+                        className={`austen-margin-link ${
+                          coverCollectionTab === "classic" ? "is-active" : ""
+                        }`}
+                      >
+                        World Classics (I–V)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCoverCollectionTab("sinhala")}
+                        className={`austen-margin-link ${
+                          coverCollectionTab === "sinhala" ? "is-active" : ""
+                        }`}
+                      >
+                        සිංහල කතා · Sinhala (VI–IX)
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="folio-contents-list">
-                    {library.map((book, idx) => (
-                      <button
-                        key={book.id}
-                        type="button"
-                        onClick={() => handleOpenExistingBook(book, true)}
-                        className="folio-contents-row"
+                  {/* Sinhala Category Filter Sub-Bar when viewing Sinhala or All */}
+                  {(coverCollectionTab === "sinhala" || coverCollectionTab === "all") && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        flexWrap: "wrap",
+                        marginBottom: "8px",
+                        paddingBottom: "6px",
+                        borderBottom: "1px dashed var(--folio-rule)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: "var(--font-cinzel)",
+                          fontSize: "10.5px",
+                          letterSpacing: "0.09em",
+                          color: "var(--folio-muted)",
+                        }}
                       >
-                        <span className="folio-contents-roman">
-                          {book.roman || ROMAN_NUMERALS[idx] || "I"}
-                        </span>
-                        <span className="folio-contents-title">{book.title}</span>
-                        <span className="folio-contents-leader" />
-                        <span className="folio-contents-meta">
-                          {book.author}, {book.year || "1813"}
-                        </span>
+                        SINHALA CATEGORIES:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSinhalaCategoryId("all")}
+                        className={`austen-margin-link ${
+                          selectedSinhalaCategoryId === "all" ? "is-active" : ""
+                        }`}
+                        style={{ padding: "2px 7px", fontSize: "10.5px" }}
+                      >
+                        All Categories
                       </button>
-                    ))}
+                      {SINHALA_STORY_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            setCoverCollectionTab("sinhala");
+                            setSelectedSinhalaCategoryId(cat.id);
+                          }}
+                          title={cat.labelEn}
+                          className={`austen-margin-link ${
+                            selectedSinhalaCategoryId === cat.id ? "is-active" : ""
+                          }`}
+                          style={{ padding: "2px 7px", fontSize: "10.5px" }}
+                        >
+                          {cat.labelSi}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div
+                    className="folio-contents-list"
+                    style={{
+                      maxHeight: "34vh",
+                      overflowY: "auto",
+                      paddingRight: "4px",
+                    }}
+                  >
+                    {/* World Classics Section */}
+                    {(coverCollectionTab === "all" ||
+                      coverCollectionTab === "classic") &&
+                      library
+                        .filter(
+                          (b) => !ALL_SINHALA_STORYBOOKS.some((s) => s.id === b.id)
+                        )
+                        .map((book, idx) => (
+                          <button
+                            key={book.id}
+                            type="button"
+                            onClick={() => handleOpenExistingBook(book, true)}
+                            className="folio-contents-row"
+                          >
+                            <span className="folio-contents-roman">
+                              {book.roman || ROMAN_NUMERALS[idx] || "I"}
+                            </span>
+                            <span className="folio-contents-title">{book.title}</span>
+                            <span className="folio-contents-leader" />
+                            <span className="folio-contents-meta">
+                              {book.author}, {book.year || "1813"}
+                            </span>
+                          </button>
+                        ))}
+
+                    {/* Categorized Sri Lankan Sinhala Stories Section */}
+                    {(coverCollectionTab === "all" ||
+                      coverCollectionTab === "sinhala") &&
+                      SINHALA_STORY_CATEGORIES.filter(
+                        (cat) =>
+                          selectedSinhalaCategoryId === "all" ||
+                          cat.id === selectedSinhalaCategoryId
+                      ).map((cat) => {
+                        const catBooks = ALL_SINHALA_STORYBOOKS.filter((b) =>
+                          cat.bookIds.includes(b.id)
+                        );
+                        if (catBooks.length === 0) return null;
+                        return (
+                          <div key={cat.id} style={{ marginTop: "6px" }}>
+                            <div
+                              style={{
+                                fontFamily: "var(--font-cinzel)",
+                                fontSize: "10.5px",
+                                letterSpacing: "0.11em",
+                                color: "var(--folio-accent)",
+                                textTransform: "uppercase",
+                                padding: "4px 0 2px",
+                              }}
+                            >
+                              {cat.labelSi} &nbsp;—&nbsp; {cat.labelEn}
+                            </div>
+                            {catBooks.map((book) => (
+                              <button
+                                key={book.id}
+                                type="button"
+                                onClick={() => handleOpenExistingBook(book, true)}
+                                className="folio-contents-row"
+                              >
+                                <span className="folio-contents-roman">
+                                  {book.roman || "VI"}
+                                </span>
+                                <span className="folio-contents-title">
+                                  {book.title}
+                                </span>
+                                <span className="folio-contents-leader" />
+                                <span className="folio-contents-meta">
+                                  {book.author}, {book.year}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               </div>
 
               <div className="austen-footer-bar">
-                <span>VOLUMES I – V</span>
-                <span>THE CLASSIC LIBRARY</span>
+                <span>VOLUMES I – IX</span>
+                <span>WORLD &amp; SRI LANKAN SINHALA LIBRARY</span>
               </div>
             </div>
 
@@ -1942,6 +2378,34 @@ export default function App() {
                       }
                       alt={currentPlate?.title || currentPage?.imageCaption}
                     />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLightboxZoom(1);
+                        setShowPlateLightbox(true);
+                      }}
+                      className="austen-plate-zoom-btn"
+                      title="Inspect full-screen plate with zoom loupe"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="13"
+                        height="13"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.3-4.3" />
+                        <path d="M11 8v6" />
+                        <path d="M8 11h6" />
+                      </svg>
+                      <span>Zoom Plate</span>
+                    </button>
                   </div>
 
                   {/* Plate Caption Row inside Mat: PLATE I OF III (left, sage accent) | Longbourn Morning Room (right, italic) */}
@@ -2022,10 +2486,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={handleToggleNarration}
-                    className={`austen-margin-link ${
-                      isPlayingAudio ? "is-active" : ""
-                    }`}
-                    style={{ fontSize: "11px" }}
+                    className="austen-margin-link"
                     title="Toggle synchronized audiobook narration"
                   >
                     <span>
@@ -2042,7 +2503,7 @@ export default function App() {
                           <rect x="6" y="4" width="4" height="16" />
                           <rect x="14" y="4" width="4" height="16" />
                         </svg>
-                        <span>PAUSE</span>
+                        <span>Pause</span>
                       </>
                     ) : (
                       <>
@@ -2053,13 +2514,13 @@ export default function App() {
                         >
                           <polygon points="6 4 20 12 6 20 6 4" />
                         </svg>
-                        <span>LISTEN</span>
+                        <span>Listen</span>
                       </>
                     )}
                   </button>
                 </div>
 
-                {/* Right-Page Literary Body: 3-State Paragraph Ink Highlighting */}
+                {/* Right-Page Literary Body: 3-State Paragraph Ink Highlighting + Interactive Marginalia + Quote Bookmarks */}
                 <div className={`austen-folio-body font-${readerBodyFont}`}>
                   {dialogueLines.map((line, idx) => {
                     const prevSpeaker =
@@ -2067,12 +2528,6 @@ export default function App() {
                     const showRubric =
                       Boolean(line.isDialogue) && line.speaker !== prevSpeaker;
 
-                    // Exact 3-state turn logic from render_audiobook_video.py:
-                    // - activeLineIdx === -1: pre-speech on folio -> all turns in state-future (38% ink)
-                    // - activeLineIdx === 999: post-speech on folio -> all turns in state-past (50% ink)
-                    // - idx === activeLineIdx: currently spoken turn -> state-active (100% ink + sage rubric)
-                    // - idx < activeLineIdx: completed turn -> state-past (50% ink)
-                    // - idx > activeLineIdx: upcoming turn -> state-future (38% ink)
                     const turnStateClass =
                       activeLineIdx === -1
                         ? "state-future"
@@ -2084,6 +2539,14 @@ export default function App() {
                         ? "state-past"
                         : "state-future";
 
+                    const quoteId = `${storybook.id}:${currentPageIdx}:${idx}`;
+                    const isQuoteSaved = savedQuotes.some((q) => q.id === quoteId);
+                    const segments = segmentTextWithMarginalia(line.text);
+                    const marginaliaForTurn =
+                      activeMarginalia && activeMarginalia.turnIdx === idx
+                        ? activeMarginalia.note
+                        : null;
+
                     return (
                       <div
                         key={idx}
@@ -2091,25 +2554,192 @@ export default function App() {
                         className={`austen-turn-block ${turnStateClass}`}
                         title="Click paragraph to seek narration here"
                       >
+                        <button
+                          type="button"
+                          onClick={(e) =>
+                            handleToggleSaveQuote(e, currentPageIdx, idx)
+                          }
+                          className={`austen-turn-bookmark-btn ${
+                            isQuoteSaved ? "is-saved" : ""
+                          }`}
+                          title={
+                            isQuoteSaved
+                              ? "Saved in Commonplace Book (click to remove)"
+                              : "Save passage to Commonplace Book"
+                          }
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            width="13"
+                            height="13"
+                            fill={isQuoteSaved ? "currentColor" : "none"}
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+                          </svg>
+                        </button>
+
                         {showRubric && (
                           <div className="austen-turn-rubric">
                             {line.speakerLabel || line.speaker.toUpperCase()}
                           </div>
                         )}
-                        <p className="austen-turn-text">{line.text}</p>
+                        <p className="austen-turn-text">
+                          {segments.map((seg, sIdx) =>
+                            seg.note ? (
+                              <span
+                                key={sIdx}
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const note = seg.note!;
+                                  setActiveMarginalia((prev) =>
+                                    prev &&
+                                    prev.turnIdx === idx &&
+                                    prev.note.term === note.term
+                                      ? null
+                                      : { turnIdx: idx, note }
+                                  );
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const note = seg.note!;
+                                    setActiveMarginalia((prev) =>
+                                      prev &&
+                                      prev.turnIdx === idx &&
+                                      prev.note.term === note.term
+                                        ? null
+                                        : { turnIdx: idx, note }
+                                    );
+                                  }
+                                }}
+                                className="austen-marginalia-term"
+                                title={`Period Glossary: ${seg.note.term} (${seg.note.category}) — click for marginalia note`}
+                              >
+                                {seg.text}
+                              </span>
+                            ) : (
+                              <React.Fragment key={sIdx}>{seg.text}</React.Fragment>
+                            )
+                          )}
+                        </p>
+
+                        {marginaliaForTurn && (
+                          <div
+                            className="austen-marginalia-card"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "baseline",
+                                justifyContent: "space-between",
+                                gap: "8px",
+                                marginBottom: "3px",
+                              }}
+                            >
+                              <div>
+                                <span
+                                  style={{
+                                    fontFamily: "var(--font-cinzel)",
+                                    fontSize: "10.5px",
+                                    letterSpacing: "0.11em",
+                                    color: "var(--folio-accent)",
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  MARGINALIA · {marginaliaForTurn.category}
+                                </span>
+                                <span
+                                  style={{
+                                    fontFamily: "var(--font-cormorant)",
+                                    fontWeight: 600,
+                                    fontSize: "18px",
+                                    color: "var(--folio-ink)",
+                                    marginLeft: "8px",
+                                  }}
+                                >
+                                  {marginaliaForTurn.term}
+                                </span>
+                                <span
+                                  style={{
+                                    fontFamily: "var(--font-garamond)",
+                                    fontStyle: "italic",
+                                    fontSize: "14px",
+                                    color: "var(--folio-muted)",
+                                    marginLeft: "6px",
+                                  }}
+                                >
+                                  ({marginaliaForTurn.era})
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setActiveMarginalia(null)}
+                                className="austen-margin-link"
+                                style={{ padding: "1px 6px", fontSize: "10px" }}
+                              >
+                                &times;
+                              </button>
+                            </div>
+                            <div
+                              style={{
+                                fontFamily: "var(--font-garamond)",
+                                fontSize: "15.5px",
+                                lineHeight: 1.38,
+                                color: "var(--folio-ink)",
+                              }}
+                            >
+                              {marginaliaForTurn.definition}
+                            </div>
+                            <div
+                              style={{
+                                fontFamily: "var(--font-garamond)",
+                                fontStyle: "italic",
+                                fontSize: "14.5px",
+                                lineHeight: 1.35,
+                                color: "var(--folio-muted)",
+                                marginTop: "3px",
+                              }}
+                            >
+                              {marginaliaForTurn.literaryNote}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
 
-                {/* Right Page Running Footer with 2px Sage Reading Progress Filament: SCENE I | FOLIO I.1 */}
+                {/* Right Page Running Footer with Interactive Chapter Scrubber Bar: SCENE I | FOLIO I.1 */}
                 <div className="austen-footer-bar">
                   <div
-                    className="austen-progress-filament"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, chapterProgress * 100))}%`,
-                    }}
-                  />
+                    className="austen-scrubber-track"
+                    onClick={handleScrubberSeek}
+                    title={`Click anywhere on this rule to scrub chapter timeline (${formatTimecode(
+                      playbackTimeSec
+                    )} / ${formatTimecode(totalDurSec)})`}
+                  >
+                    <div
+                      className="austen-scrubber-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, chapterProgress * 100))}%`,
+                      }}
+                    />
+                    <div
+                      className="austen-scrubber-thumb"
+                      style={{
+                        left: `${Math.min(100, Math.max(0, chapterProgress * 100))}%`,
+                      }}
+                    />
+                  </div>
                   <span>{currentPage?.sceneLabel || "SCENE I"}</span>
                   <span
                     onClick={() =>
@@ -2129,23 +2759,22 @@ export default function App() {
             </div>
           )}
 
-          {/* Ghosted Outer Margin Line (below the y=1024 rule — zero borders or pills) */}
+          {/* Outer Margin Bar with User-Friendly Buttons */}
           <div className="austen-margin-bar">
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <button
                 type="button"
                 onClick={handleCloseBookToCover}
+                title="Return to Contents & Commission Folio"
                 className="austen-margin-link"
               >
-                &larr; CONTENTS &amp; COMMISSION
+                &larr; Library
               </button>
-              <span>·</span>
               <button
                 type="button"
                 onClick={handleToggleNarration}
-                className={`austen-margin-link ${
-                  isPlayingAudio ? "is-active" : ""
-                }`}
+                title={isPlayingAudio ? "Pause Narration (Space)" : "Resume Narration (Space)"}
+                className="austen-margin-link"
               >
                 {isPlayingAudio ? (
                   <>
@@ -2157,7 +2786,7 @@ export default function App() {
                       <rect x="6" y="4" width="4" height="16" />
                       <rect x="14" y="4" width="4" height="16" />
                     </svg>
-                    <span>PAUSE NARRATION</span>
+                    <span>Pause</span>
                   </>
                 ) : (
                   <>
@@ -2168,14 +2797,14 @@ export default function App() {
                     >
                       <polygon points="6 4 20 12 6 20 6 4" />
                     </svg>
-                    <span>RESUME NARRATION</span>
+                    <span>Play</span>
                   </>
                 )}
               </button>
-              <span>·</span>
               <button
                 type="button"
                 onClick={() => startBookNarration(storybook, 0, true)}
+                title="Replay narration from Chapter Title Card"
                 className="austen-margin-link"
               >
                 <svg
@@ -2190,30 +2819,75 @@ export default function App() {
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                   <path d="M3 3v5h5" />
                 </svg>
-                <span>REPLAY FROM TITLE</span>
+                <span>Replay</span>
               </button>
-              <span>·</span>
+              <button
+                type="button"
+                onClick={() => setShowMixerPanel((prev) => !prev)}
+                title="Open Playback Speed & Audio Mixer (Voice, Music, Ambient)"
+                className={`austen-margin-link ${
+                  showMixerPanel || playbackSpeed !== 1.0 ? "is-active" : ""
+                }`}
+              >
+                <span>Mixer ({playbackSpeed}&times;)</span>
+              </button>
               <button
                 type="button"
                 onClick={handleToggleAmbientSound}
-                title={`Layer scene ambient sound: ${activeAmbientProfile.label} — ${activeAmbientProfile.description}`}
+                title={`Ambient Sound (A): ${activeAmbientProfile.label} — ${activeAmbientProfile.description}`}
                 className={`austen-margin-link ${
                   isAmbientSoundEnabled ? "is-active" : ""
                 }`}
               >
                 {isAmbientSoundEnabled
-                  ? `AMBIENT SOUND (${activeAmbientProfile.shortTag})`
-                  : "AMBIENT SOUND"}
+                  ? `Ambient (${activeAmbientProfile.shortTag})`
+                  : "Ambient"}
               </button>
-              <span>·</span>
               <button
                 type="button"
                 onClick={handleCyclePlate}
+                title="Cycle Illustration Plate (P)"
                 className="austen-margin-link"
               >
-                CYCLE PLATE ({resolvedPlateIdx + 1}/{plates.length})
+                Plate ({resolvedPlateIdx + 1}/{plates.length})
               </button>
-              <span>·</span>
+              <button
+                type="button"
+                onClick={handleCycleLightingMode}
+                title="Cycle Reading Lighting Mode: Daylight Cream / Candlelight Amber / Midnight Vellum"
+                className={`austen-margin-link ${
+                  lightingMode !== "daylight" ? "is-active" : ""
+                }`}
+              >
+                <span>
+                  {lightingMode === "daylight"
+                    ? "Light: Day"
+                    : lightingMode === "candlelight"
+                    ? "Light: Candle"
+                    : "Light: Night"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCommonplaceModal(true)}
+                title="Open Commonplace Book (Saved Quotes & Bookmarks)"
+                className={`austen-margin-link ${
+                  savedQuotes.length > 0 ? "is-active" : ""
+                }`}
+              >
+                <span>Saved ({savedQuotes.length})</span>
+              </button>
+              {ALL_SINHALA_STORYBOOKS.some((s) => s.id === storybook.id) && (
+                <button
+                  type="button"
+                  onClick={handleSynthesizeFolioWav}
+                  disabled={isSynthesizingAudio}
+                  title="Synthesize 24 kHz Gemini Flash TTS Audio for this Sinhala Folio"
+                  className="austen-margin-link"
+                >
+                  <span>{isSynthesizingAudio ? "Sinhala TTS…" : "24kHz TTS"}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleDownloadFolio}
@@ -2221,31 +2895,17 @@ export default function App() {
                 title="Download structured archival PDF of this Storybook Folio"
                 className="austen-margin-link"
               >
-                {isDownloadingFolio ? "BINDING PDF…" : "DOWNLOAD FOLIO"}
+                {isDownloadingFolio ? "PDF…" : "PDF"}
               </button>
-              <span>·</span>
-              <button
-                type="button"
-                onClick={handleShareFolio}
-                title={`Copy deep-link to ${storybook.title} · Folio ${
-                  storybook.roman || "I"
-                }.${currentPageIdx + 1}, Turn ${resolvedActiveLineIdx + 1}`}
-                className={`austen-margin-link ${
-                  isCopiedShareLink ? "is-active" : ""
-                }`}
-              >
-                {isCopiedShareLink ? "LINK COPIED" : "SHARE FOLIO"}
-              </button>
-              <span>·</span>
               <label
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "6px",
+                  gap: "5px",
                 }}
                 title="Select Reader body text typeface"
               >
-                <span>TYPEFACE:</span>
+                <span>Font:</span>
                 <select
                   aria-label="Reader body text font"
                   value={readerBodyFont}
@@ -2262,56 +2922,50 @@ export default function App() {
                 </select>
               </label>
               {statusNote && (
-                <>
-                  <span>·</span>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-garamond)",
-                      fontStyle: "italic",
-                      textTransform: "none",
-                      letterSpacing: "normal",
-                      fontSize: "14px",
-                      color: "var(--folio-accent)",
-                    }}
-                  >
-                    {statusNote}
-                  </span>
-                </>
+                <span
+                  style={{
+                    fontFamily: "var(--font-garamond)",
+                    fontStyle: "italic",
+                    textTransform: "none",
+                    letterSpacing: "normal",
+                    fontSize: "14px",
+                    color: "var(--folio-ink)",
+                  }}
+                >
+                  {statusNote}
+                </span>
               )}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               {folioHistory.length > 0 && (
-                <>
-                  <nav
-                    aria-label="Session folio reading history"
-                    style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                  >
-                    <span>HISTORY:</span>
-                    {folioHistory.map((crumb, idx) => {
-                      const isCurrent =
-                        idx === folioHistory.length - 1 &&
-                        crumb.bookId === storybook.id &&
-                        crumb.pageIdx === currentPageIdx;
-                      return (
-                        <React.Fragment key={`${crumb.id}_${idx}`}>
-                          {idx > 0 && <span aria-hidden="true">&rsaquo;</span>}
-                          <button
-                            type="button"
-                            onClick={() => handleJumpToBreadcrumb(crumb, idx)}
-                            title={`${crumb.bookTitle} · Folio ${crumb.folioCode} — ${crumb.caption}`}
-                            className={`austen-margin-link ${
-                              isCurrent ? "is-active" : ""
-                            }`}
-                          >
-                            {crumb.folioCode}
-                          </button>
-                        </React.Fragment>
-                      );
-                    })}
-                  </nav>
-                  <span>·</span>
-                </>
+                <nav
+                  aria-label="Session folio reading history"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                >
+                  <span>History:</span>
+                  {folioHistory.map((crumb, idx) => {
+                    const isCurrent =
+                      idx === folioHistory.length - 1 &&
+                      crumb.bookId === storybook.id &&
+                      crumb.pageIdx === currentPageIdx;
+                    return (
+                      <React.Fragment key={`${crumb.id}_${idx}`}>
+                        {idx > 0 && <span aria-hidden="true">&rsaquo;</span>}
+                        <button
+                          type="button"
+                          onClick={() => handleJumpToBreadcrumb(crumb, idx)}
+                          title={`${crumb.bookTitle} · Folio ${crumb.folioCode} — ${crumb.caption}`}
+                          className={`austen-margin-link ${
+                            isCurrent ? "is-active" : ""
+                          }`}
+                        >
+                          {crumb.folioCode}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+                </nav>
               )}
               <button
                 type="button"
@@ -2320,6 +2974,7 @@ export default function App() {
                   seekToFolioAndTurn(currentPageIdx - 1, 0)
                 }
                 disabled={currentPageIdx === 0 && !showOpeningTitleCard}
+                title="Previous Folio"
                 className="austen-margin-link"
               >
                 <svg
@@ -2333,24 +2988,22 @@ export default function App() {
                 >
                   <path d="m15 18-6-6 6-6" />
                 </svg>
-                <span>PREV FOLIO</span>
+                <span>Prev</span>
               </button>
-              <span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
                 {storybook.pages.map((p, pIdx) => (
-                  <React.Fragment key={p.pageNumber}>
-                    {pIdx > 0 && " · "}
-                    <button
-                      type="button"
-                      onClick={() => seekToFolioAndTurn(pIdx, 0)}
-                      className={`austen-margin-link ${
-                        pIdx === currentPageIdx && !showOpeningTitleCard
-                          ? "is-active"
-                          : ""
-                      }`}
-                    >
-                      {`${storybook.roman || "I"}.${pIdx + 1}`}
-                    </button>
-                  </React.Fragment>
+                  <button
+                    key={p.pageNumber}
+                    type="button"
+                    onClick={() => seekToFolioAndTurn(pIdx, 0)}
+                    className={`austen-margin-link ${
+                      pIdx === currentPageIdx && !showOpeningTitleCard
+                        ? "is-active"
+                        : ""
+                    }`}
+                  >
+                    {`${storybook.roman || "I"}.${pIdx + 1}`}
+                  </button>
                 ))}
               </span>
               <button
@@ -2360,9 +3013,10 @@ export default function App() {
                   seekToFolioAndTurn(currentPageIdx + 1, 0)
                 }
                 disabled={currentPageIdx >= storybook.pages.length - 1}
+                title="Next Folio"
                 className="austen-margin-link"
               >
-                <span>NEXT FOLIO</span>
+                <span>Next</span>
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
@@ -2375,25 +3029,154 @@ export default function App() {
                   <path d="m9 18 6-6-6-6" />
                 </svg>
               </button>
-              <span>·</span>
               <button
                 type="button"
                 onClick={() => setShowTitleCardModal(true)}
+                title="View Chapter Title Leaf & Character Sheet"
                 className="austen-margin-link"
               >
-                TITLE LEAF
+                Title
               </button>
-              <span>·</span>
               <button
                 type="button"
                 onClick={() => setShowShortcutsModal(true)}
                 title="Reader Keyboard Shortcuts (?)"
                 className="austen-margin-link"
               >
-                SHORTCUTS (?)
+                Shortcuts (?)
               </button>
             </div>
           </div>
+
+          {/* Expandable Playback Speed & 3-Channel Audio Mixer Strip */}
+          {showMixerPanel && (
+            <div
+              className="austen-mixer-panel"
+              role="region"
+              aria-label="Playback Speed and Audio Mixer"
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "16px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-cinzel)",
+                      fontSize: "11px",
+                      letterSpacing: "0.11em",
+                      color: "var(--folio-accent)",
+                    }}
+                  >
+                    CADENCE (SPEED):
+                  </span>
+                  {PLAYBACK_SPEED_OPTIONS.map((spd) => (
+                    <button
+                      key={spd}
+                      type="button"
+                      onClick={() => setPlaybackSpeed(spd)}
+                      className={`austen-margin-link ${
+                        playbackSpeed === spd ? "is-active" : ""
+                      }`}
+                    >
+                      {spd}&times;
+                    </button>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "18px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      fontFamily: "var(--font-cinzel)",
+                      fontSize: "11px",
+                      color: "var(--folio-ink)",
+                    }}
+                  >
+                    <span>VOICE ({Math.round(voiceVolume * 100)}%)</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={voiceVolume}
+                      onChange={(e) => setVoiceVolume(parseFloat(e.target.value))}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      fontFamily: "var(--font-cinzel)",
+                      fontSize: "11px",
+                      color: "var(--folio-ink)",
+                    }}
+                  >
+                    <span>SCORE ({Math.round(musicVolume * 100)}%)</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={musicVolume}
+                      onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      fontFamily: "var(--font-cinzel)",
+                      fontSize: "11px",
+                      color: "var(--folio-ink)",
+                    }}
+                  >
+                    <span>AMBIENT ({Math.round(ambientVolume * 100)}%)</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={ambientVolume}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setAmbientVolume(val);
+                        if (!isAmbientSoundEnabled && val > 0) {
+                          setIsAmbientSoundEnabled(true);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMixerPanel(false)}
+                  className="austen-margin-link"
+                >
+                  Close &times;
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Scrollable Character Cast Strip (below Reader margin bar) */}
           {folioCast.length > 0 && (
@@ -3208,6 +3991,319 @@ export default function App() {
                 <span>PRESS ? ANYTIME IN READER MODE</span>
                 <span>ESC TO DISMISS</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================
+          LEAF OVERLAY 4: COMMONPLACE BOOK (SAVED QUOTES & BOOKMARKS)
+          ==================================================================== */}
+      {showCommonplaceModal && (
+        <div
+          className="folio-modal-backdrop"
+          onClick={() => setShowCommonplaceModal(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(30, 27, 24, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+            zIndex: 55,
+          }}
+        >
+          <div
+            className="folio-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "var(--folio-paper)",
+              border: "1px solid var(--folio-rule)",
+              padding: "6px",
+              maxWidth: "760px",
+              width: "100%",
+              maxHeight: "86vh",
+              overflowY: "auto",
+            }}
+          >
+            <div
+              className="folio-modal-inner"
+              style={{
+                border: "1px solid var(--folio-rule)",
+                padding: "24px 30px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  borderBottom: "1px solid var(--folio-rule)",
+                  paddingBottom: "12px",
+                  marginBottom: "16px",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-cinzel)",
+                      fontSize: "11.5px",
+                      letterSpacing: "0.125em",
+                      color: "var(--folio-accent)",
+                    }}
+                  >
+                    READER&rsquo;S COMMONPLACE BOOK
+                  </div>
+                  <h2
+                    style={{
+                      fontFamily: "var(--font-cormorant)",
+                      fontSize: "30px",
+                      fontWeight: 500,
+                      color: "var(--folio-ink)",
+                      margin: "2px 0 0",
+                    }}
+                  >
+                    Saved Passages &amp; Folio Ribbons ({savedQuotes.length})
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCommonplaceModal(false)}
+                  className="austen-margin-link"
+                >
+                  CLOSE &times;
+                </button>
+              </div>
+
+              {savedQuotes.length === 0 ? (
+                <p
+                  style={{
+                    fontFamily: "var(--font-garamond)",
+                    fontStyle: "italic",
+                    fontSize: "18px",
+                    color: "var(--folio-muted)",
+                    textAlign: "center",
+                    padding: "28px 12px",
+                  }}
+                >
+                  Hover over any paragraph in the Reader and click the ribbon icon on the right margin to inscribe your favourite passages here.
+                </p>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "14px",
+                  }}
+                >
+                  {savedQuotes.map((q) => (
+                    <div
+                      key={q.id}
+                      style={{
+                        backgroundColor: "var(--folio-card)",
+                        border: "1px solid var(--folio-rule)",
+                        padding: "12px 16px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "8px",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: "var(--font-cinzel)",
+                            fontSize: "11px",
+                            letterSpacing: "0.1em",
+                            color: "var(--folio-accent)",
+                          }}
+                        >
+                          {q.bookTitle} &nbsp;·&nbsp; FOLIO {q.folioCode} &nbsp;·&nbsp;{" "}
+                          {q.speaker}
+                        </span>
+                        <div style={{ display: "inline-flex", gap: "6px" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleJumpToSavedQuote(q)}
+                            className="austen-margin-link is-active"
+                          >
+                            OPEN FOLIO &rarr;
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSavedQuotes((prev) =>
+                                prev.filter((item) => item.id !== q.id)
+                              )
+                            }
+                            className="austen-margin-link"
+                            title="Remove from Commonplace Book"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      </div>
+                      <p
+                        style={{
+                          fontFamily: "var(--font-garamond)",
+                          fontSize: "17.5px",
+                          lineHeight: 1.42,
+                          color: "var(--folio-ink)",
+                          margin: 0,
+                        }}
+                      >
+                        &ldquo;{q.text}&rdquo;
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================
+          LEAF OVERLAY 5: FULL-SCREEN PLATE LIGHTBOX & ZOOM LOUPE
+          ==================================================================== */}
+      {showPlateLightbox && (
+        <div
+          className="folio-modal-backdrop"
+          onClick={() => setShowPlateLightbox(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(18, 16, 14, 0.82)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            zIndex: 60,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "var(--folio-paper)",
+              border: "1px solid var(--folio-rule)",
+              padding: "16px 20px",
+              maxWidth: "1180px",
+              width: "100%",
+              maxHeight: "92vh",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px",
+                borderBottom: "1px solid var(--folio-rule)",
+                paddingBottom: "10px",
+              }}
+            >
+              <div>
+                <span
+                  style={{
+                    fontFamily: "var(--font-cinzel)",
+                    fontSize: "12px",
+                    letterSpacing: "0.12em",
+                    color: "var(--folio-accent)",
+                    marginRight: "10px",
+                  }}
+                >
+                  {canonicalPlateLabel}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-garamond)",
+                    fontStyle: "italic",
+                    fontSize: "19px",
+                    color: "var(--folio-ink)",
+                  }}
+                >
+                  {currentPlate?.title || currentPage?.imageCaption}
+                </span>
+              </div>
+
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-cinzel)",
+                    fontSize: "11px",
+                    color: "var(--folio-muted)",
+                  }}
+                >
+                  LOUPE ZOOM:
+                </span>
+                {[1, 1.5, 2, 2.5].map((z) => (
+                  <button
+                    key={z}
+                    type="button"
+                    onClick={() => setLightboxZoom(z)}
+                    className={`austen-margin-link ${
+                      lightboxZoom === z ? "is-active" : ""
+                    }`}
+                  >
+                    {z}&times;
+                  </button>
+                ))}
+                {plates.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleCyclePlate}
+                    className="austen-margin-link"
+                  >
+                    Next Plate ({resolvedPlateIdx + 1}/{plates.length})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPlateLightbox(false)}
+                  className="austen-margin-link"
+                >
+                  CLOSE &times;
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                overflow: "auto",
+                border: "1px solid var(--folio-rule)",
+                backgroundColor: "var(--folio-card)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                maxHeight: "76vh",
+              }}
+            >
+              <img
+                src={
+                  currentPlate?.imageDataUrl ||
+                  currentPlate?.imageUrl ||
+                  currentPage?.dioramaUrl ||
+                  currentPage?.imageUrl ||
+                  storybook.coverImageUrl
+                }
+                alt={currentPlate?.title || currentPage?.imageCaption}
+                style={{
+                  width: `${lightboxZoom * 100}%`,
+                  maxWidth: "none",
+                  height: "auto",
+                  display: "block",
+                  transition: "width 220ms ease",
+                }}
+              />
             </div>
           </div>
         </div>
