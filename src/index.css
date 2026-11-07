@@ -557,6 +557,9 @@ body,
 }
 
 .austen-margin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: transparent;
   border: none;
   padding: 0;
@@ -567,6 +570,12 @@ body,
   color: var(--folio-muted);
   cursor: pointer;
   transition: color 0.16s ease;
+}
+
+.austen-margin-link svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
 
 .austen-margin-link:hover:not(:disabled) {

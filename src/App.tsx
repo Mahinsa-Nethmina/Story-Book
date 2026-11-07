@@ -2028,8 +2028,34 @@ export default function App() {
                     style={{ fontSize: "11px" }}
                     title="Toggle synchronized audiobook narration"
                   >
-                    {formatTimecode(playbackTimeSec)} / {formatTimecode(totalDurSec)}{" "}
-                    &nbsp;·&nbsp; {isPlayingAudio ? "PAUSE" : "LISTEN"}
+                    <span>
+                      {formatTimecode(playbackTimeSec)} / {formatTimecode(totalDurSec)}{" "}
+                      &nbsp;·&nbsp;
+                    </span>
+                    {isPlayingAudio ? (
+                      <>
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <rect x="6" y="4" width="4" height="16" />
+                          <rect x="14" y="4" width="4" height="16" />
+                        </svg>
+                        <span>PAUSE</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <polygon points="6 4 20 12 6 20 6 4" />
+                        </svg>
+                        <span>LISTEN</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
@@ -2121,7 +2147,30 @@ export default function App() {
                   isPlayingAudio ? "is-active" : ""
                 }`}
               >
-                {isPlayingAudio ? "PAUSE NARRATION" : "RESUME NARRATION"}
+                {isPlayingAudio ? (
+                  <>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                    <span>PAUSE NARRATION</span>
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <polygon points="6 4 20 12 6 20 6 4" />
+                    </svg>
+                    <span>RESUME NARRATION</span>
+                  </>
+                )}
               </button>
               <span>·</span>
               <button
@@ -2129,16 +2178,19 @@ export default function App() {
                 onClick={() => startBookNarration(storybook, 0, true)}
                 className="austen-margin-link"
               >
-                REPLAY FROM TITLE
-              </button>
-              <span>·</span>
-              <button
-                type="button"
-                onClick={handleSynthesizeFolioWav}
-                disabled={isSynthesizingAudio}
-                className="austen-margin-link"
-              >
-                {isSynthesizingAudio ? "SYNTHESIZING…" : "LIVE TTS WAV"}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+                <span>REPLAY FROM TITLE</span>
               </button>
               <span>·</span>
               <button
@@ -2160,15 +2212,6 @@ export default function App() {
                 className="austen-margin-link"
               >
                 CYCLE PLATE ({resolvedPlateIdx + 1}/{plates.length})
-              </button>
-              <span>·</span>
-              <button
-                type="button"
-                onClick={handleRepaintCurrentPlate}
-                disabled={isRegeneratingPlate}
-                className="austen-margin-link"
-              >
-                {isRegeneratingPlate ? "ENGRAVING…" : "ENGRAVE PLATE"}
               </button>
               <span>·</span>
               <button
@@ -2279,7 +2322,18 @@ export default function App() {
                 disabled={currentPageIdx === 0 && !showOpeningTitleCard}
                 className="austen-margin-link"
               >
-                &lsaquo; PREV FOLIO
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+                <span>PREV FOLIO</span>
               </button>
               <span>
                 {storybook.pages.map((p, pIdx) => (
@@ -2308,7 +2362,18 @@ export default function App() {
                 disabled={currentPageIdx >= storybook.pages.length - 1}
                 className="austen-margin-link"
               >
-                NEXT FOLIO &rsaquo;
+                <span>NEXT FOLIO</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
               </button>
               <span>·</span>
               <button
@@ -2317,14 +2382,6 @@ export default function App() {
                 className="austen-margin-link"
               >
                 TITLE LEAF
-              </button>
-              <span>·</span>
-              <button
-                type="button"
-                onClick={() => setShowAgentSpecModal(true)}
-                className="austen-margin-link"
-              >
-                COLOPHON
               </button>
               <span>·</span>
               <button
