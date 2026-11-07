@@ -63,6 +63,7 @@ export interface StorybookPage {
   dioramaUrl?: string;
   audioUrl?: string;
   audioDataUrl?: string;
+  ambientSound?: string;
   startSec?: number;
   endSec?: number;
   durationSeconds?: number;

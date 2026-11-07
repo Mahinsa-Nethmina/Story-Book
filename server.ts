@@ -58,7 +58,14 @@ async function startServer() {
       if (!apiKey) {
         return res.status(503).json({ error: "API key is not configured." });
       }
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
       const response = await ai.models.generateContent(req.body);
       return res.json({
         candidates: response?.candidates,
@@ -184,9 +191,8 @@ async function startServer() {
       environmentId,
       previousInteractionId,
       sessionId,
-      apiKey,
     } = req.body;
-    const resolvedApiKey = resolveServerApiKey(apiKey);
+    const resolvedApiKey = resolveServerApiKey();
 
     if (!prompt && !classicBookTitle) {
       return res.status(400).json({ error: "A story prompt or classic book title is required" });
@@ -194,7 +200,7 @@ async function startServer() {
 
     if (!resolvedApiKey) {
       return res.status(400).json({
-        error: "No valid GEMINI_API_KEY configured. Please provide a valid Gemini API key.",
+        error: "GEMINI_API_KEY is not configured. Please check the API key in the Settings > Secrets panel.",
       });
     }
 

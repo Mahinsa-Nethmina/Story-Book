@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "[ -d node_modules/.bin ] || bun install || npm install",
     "dev": "tsx server.ts",
-    "start": "tsx server.ts",
+    "start": "node server.ts",
     "prebuild": "[ -d node_modules/.bin ] || bun install || npm install",
     "build": "vite build",
     "preview": "vite preview",

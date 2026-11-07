@@ -12,57 +12,7 @@ import {
 import {
   DEFAULT_MANAGED_AGENT_ID,
   DEFAULT_MANAGED_AGENT_MODEL,
-  getInlineBrowserAgentSources,
 } from "./inlineAgentBundle";
-
-function isPlaceholderApiKey(key?: string | null): boolean {
-  if (!key || typeof key !== "string") return true;
-  const trimmed = key.trim();
-  if (!trimmed) return true;
-  const upper = trimmed.toUpperCase();
-  return (
-    upper === "MY_GEMINI_API_KEY" ||
-    upper === "YOUR_GEMINI_API_KEY" ||
-    upper === "YOUR_API_KEY" ||
-    upper === "GEMINI_API_KEY" ||
-    upper === "PLACEHOLDER" ||
-    upper.startsWith("TODO") ||
-    upper.startsWith("REPLACE_")
-  );
-}
-
-function getApiKey(overrideKey?: string): string {
-  let storedKey = "";
-  try {
-    if (typeof window !== "undefined" && window.localStorage) {
-      storedKey = window.localStorage.getItem("FOLIO_GEMINI_API_KEY") || "";
-      if (isPlaceholderApiKey(storedKey)) {
-        window.localStorage.removeItem("FOLIO_GEMINI_API_KEY");
-        storedKey = "";
-      }
-    }
-  } catch {
-    // Sandboxed null-origin frames block localStorage
-  }
-  const envKey =
-    typeof process !== "undefined" && process.env
-      ? process.env.API_KEY || process.env.GEMINI_API_KEY || ""
-      : "";
-  const winKey =
-    typeof window !== "undefined"
-      ? (window as any).process?.env?.API_KEY ||
-        (window as any).process?.env?.GEMINI_API_KEY ||
-        ""
-      : "";
-
-  const candidates = [overrideKey, storedKey, envKey, winKey];
-  for (const candidate of candidates) {
-    if (!isPlaceholderApiKey(candidate)) {
-      return candidate!.trim();
-    }
-  }
-  return "server-side";
-}
 
 function makeLogId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -104,7 +54,6 @@ export interface RunStorybookAgentOptions {
   narratorVoice: string;
   agentName?: string;
   modelName?: string;
-  apiKey?: string;
   environmentId?: string;
   previousInteractionId?: string;
   sessionId: string;
@@ -175,337 +124,14 @@ function inferPipelineStage(
 }
 
 /**
- * Lists and downloads individual files from a sandbox environment in the browser
- * using the Environments Files API (`GET /v1beta/environments/{envId}/files/{path}?alt=media`).
- */
-async function downloadBrowserEnvironmentAssets(
-  environmentId: string,
-  apiKey: string,
-  signal?: AbortSignal
-): Promise<{
-  storybookData: any;
-  imageAssets: Record<string, string>;
-  audioAssets: Record<string, string>;
-}> {
-  const cleanEnvId = environmentId
-    .replace(/^environments\//, "")
-    .replace(/^environment-/, "");
-  const baseUrl = `https://generativelanguage.googleapis.com/v1beta/environments/${cleanEnvId}/files`;
-  const headers = { "x-goog-api-key": apiKey };
-
-  let storybookData: any = null;
-  const imageAssets: Record<string, string> = {};
-  const audioAssets: Record<string, string> = {};
-
-  const listRes = await fetch(`${baseUrl}/workspace?recursive=true`, {
-    headers,
-    signal,
-  });
-
-  let files: Array<{ name?: string; path: string; type?: string }> = [];
-  if (listRes.ok) {
-    const data = await listRes.json();
-    if (Array.isArray(data?.files)) {
-      files = data.files;
-    }
-  } else {
-    const rootRes = await fetch(baseUrl, { headers, signal });
-    if (rootRes.ok) {
-      const rootData = await rootRes.json();
-      if (Array.isArray(rootData?.files)) {
-        files = rootData.files;
-      }
-    }
-  }
-
-  const fileEntries = files.filter(
-    (f) =>
-      String(f.type || "").toUpperCase() === "FILE" &&
-      !(f.name || f.path.split("/").pop() || "").startsWith(".")
-  );
-
-  const imageByStem = new Map<string, { path: string }>();
-  const jsonEntries: Array<{ path: string }> = [];
-  const audioEntries: Array<{ path: string }> = [];
-
-  for (const entry of fileEntries) {
-    if (entry.path.endsWith("storybook.json")) {
-      jsonEntries.push(entry);
-    } else if (/\.(png|jpg|jpeg|webp)$/i.test(entry.path)) {
-      const stem = entry.path.replace(/\.(png|jpg|jpeg|webp)$/i, "");
-      if (!imageByStem.has(stem) || /\.(jpg|jpeg)$/i.test(entry.path)) {
-        imageByStem.set(stem, entry);
-      }
-    } else if (/\.(mp3|wav)$/i.test(entry.path)) {
-      audioEntries.push(entry);
-    }
-  }
-
-  const hasFullMaster = audioEntries.some((f) =>
-    /(full_storybook|master)\.(mp3|wav)$/i.test(f.path)
-  );
-  const selectedAudio = hasFullMaster
-    ? audioEntries.filter((f) =>
-        /(full_storybook|master|ambient|lyria|score|music)\.(mp3|wav)$/i.test(
-          f.path
-        )
-      )
-    : audioEntries;
-
-  const targets = [
-    ...jsonEntries,
-    ...Array.from(imageByStem.values()),
-    ...selectedAudio,
-  ];
-  const textDecoder = new TextDecoder("utf-8");
-
-  await Promise.all(
-    targets.map(async (target) => {
-      try {
-        const cleanPath = target.path.replace(/^\/+/, "");
-        const dlRes = await fetch(`${baseUrl}/${cleanPath}?alt=media`, {
-          headers,
-          signal,
-        });
-        if (!dlRes.ok) return;
-        const fBytes = new Uint8Array(await dlRes.arrayBuffer());
-        const base = cleanPath.split("/").pop() || cleanPath;
-        const relPath = cleanPath.replace(/^workspace\//, "");
-
-        if (cleanPath.endsWith("storybook.json")) {
-          try {
-            storybookData = JSON.parse(textDecoder.decode(fBytes));
-          } catch {}
-        } else if (/\.(png|jpg|jpeg|webp)$/i.test(cleanPath)) {
-          const mime = cleanPath.toLowerCase().endsWith(".png")
-            ? "image/png"
-            : "image/jpeg";
-          const uri = `data:${mime};base64,${uint8ToBase64(fBytes)}`;
-          const stemBase = base.replace(/\.(png|jpg|jpeg|webp)$/i, "");
-          imageAssets[cleanPath] = uri;
-          imageAssets[relPath] = uri;
-          imageAssets[`images/${base}`] = uri;
-          imageAssets[base] = uri;
-          imageAssets[`images/${stemBase}.png`] = uri;
-          imageAssets[`images/${stemBase}.jpg`] = uri;
-          imageAssets[`${stemBase}.png`] = uri;
-          imageAssets[`${stemBase}.jpg`] = uri;
-        } else if (/\.(mp3|wav)$/i.test(cleanPath)) {
-          const mime = cleanPath.toLowerCase().endsWith(".mp3")
-            ? "audio/mpeg"
-            : "audio/wav";
-          const uri = `data:${mime};base64,${uint8ToBase64(fBytes)}`;
-          audioAssets[cleanPath] = uri;
-          audioAssets[relPath] = uri;
-          audioAssets[`audio/${base}`] = uri;
-          audioAssets[base] = uri;
-        }
-      } catch {
-        // Ignore individual file download error
-      }
-    })
-  );
-
-  return { storybookData, imageAssets, audioAssets };
-}
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function extractFirstJsonObject(text: string): any | null {
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch && codeBlockMatch[1]) {
-    try {
-      return JSON.parse(codeBlockMatch[1].trim());
-    } catch {
-      // continue
-    }
-  }
-  const firstBrace = text.indexOf("{");
-  const lastBrace = text.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    try {
-      return JSON.parse(text.slice(firstBrace, lastBrace + 1));
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function normalizeBrowserManagedStorybook(
-  raw: any,
-  opts: RunStorybookAgentOptions,
-  imageAssets: Record<string, string>,
-  audioAssets: Record<string, string>
-): Storybook {
-  const fallback = createBespokeFairytaleStorybook(
-    opts.prompt,
-    opts.visualStyle,
-    opts.narratorVoice,
-    opts.paletteKey || "regency"
-  );
-  if (!raw || typeof raw !== "object") return fallback;
-
-  const pal =
-    raw.palette && typeof raw.palette === "object" && raw.palette.paper
-      ? raw.palette
-      : fallback.palette;
-
-  const romans = ["I", "II", "III", "IV", "V"];
-  const rawPages: any[] = Array.isArray(raw.pages)
-    ? raw.pages
-    : Array.isArray(raw.folios)
-    ? raw.folios
-    : [];
-
-  if (rawPages.length === 0) return fallback;
-
-  const firstImgData = Object.values(imageAssets)[0];
-  const firstAudioData = Object.values(audioAssets)[0];
-  const masterAudioData =
-    audioAssets["audio/full_storybook.mp3"] ||
-    audioAssets["full_storybook.mp3"] ||
-    (raw.fullAudiobookUrl && audioAssets[raw.fullAudiobookUrl]);
-  const ambientAudioData =
-    audioAssets["audio/ambient.mp3"] ||
-    audioAssets["ambient.mp3"] ||
-    (raw.backgroundMusicUrl && audioAssets[raw.backgroundMusicUrl]);
-
-  const pages = rawPages.slice(0, 3).map((p: any, idx: number) => {
-    const pnum = idx + 1;
-    const rom = romans[idx] || String(pnum);
-    const matchedImg =
-      (p.imageUrl && imageAssets[p.imageUrl]) ||
-      imageAssets[`images/page_${pnum}.png`] ||
-      imageAssets[`page_${pnum}.png`] ||
-      imageAssets[`images/scene_${pnum}.png`] ||
-      imageAssets[`scene_${pnum}.png`] ||
-      firstImgData ||
-      fallback.pages[idx]?.imageUrl ||
-      fallback.coverImageUrl;
-
-    const pageAudio =
-      (p.audioUrl && audioAssets[p.audioUrl]) ||
-      audioAssets[`audio/page_${pnum}.mp3`] ||
-      audioAssets[`page_${pnum}.mp3`] ||
-      (idx === 0 ? firstAudioData : undefined);
-
-    const rawLines: any[] = Array.isArray(p.dialogueLines)
-      ? p.dialogueLines
-      : Array.isArray(p.turns)
-      ? p.turns
-      : [];
-
-    const dialogueLines: DialogueLine[] =
-      rawLines.length > 0
-        ? rawLines.map((dl: any, lIdx: number) => ({
-            speaker: dl.speaker || "Narrator",
-            speakerLabel:
-              dl.speakerLabel ||
-              String(dl.speaker || "NARRATOR").toUpperCase(),
-            voiceRoleLabel:
-              dl.voiceRoleLabel ||
-              (dl.isDialogue ? "Character Dialogue" : "Literary Narration"),
-            isDialogue: Boolean(dl.isDialogue),
-            voiceName: dl.voiceName || opts.narratorVoice || "Kore",
-            stylePrompt: dl.stylePrompt,
-            text: dl.text || dl.display_text || "",
-            durationSeconds:
-              dl.durationSeconds ||
-              Math.max(2.4, Math.round(((dl.text || "").length || 45) / 14)),
-            audioDataUrl:
-              !masterAudioData && lIdx === 0 && pageAudio
-                ? pageAudio
-                : undefined,
-          }))
-        : fallback.pages[idx]?.dialogueLines || [];
-
-    const caption =
-      p.imageCaption ||
-      p.caption ||
-      p.title ||
-      p.chapterTitle ||
-      fallback.pages[idx]?.imageCaption ||
-      `Scene ${rom}`;
-
-    return {
-      pageNumber: pnum,
-      sceneLabel: p.sceneLabel || `SCENE ${rom}`,
-      folioLabel: p.folioLabel || p.folio || `FOLIO I.${pnum}`,
-      chapterTitle: (p.chapterTitle || p.title || "CHAPTER I").toUpperCase(),
-      narrativeText: p.narrativeText || dialogueLines[0]?.text || opts.prompt,
-      illustrationPrompt: p.illustrationPrompt || p.scenePrompt || opts.prompt,
-      imageCaption: caption,
-      imageUrl: matchedImg,
-      imageDataUrl: matchedImg,
-      dioramaUrl: matchedImg,
-      audioDataUrl: pageAudio,
-      plates: [
-        {
-          plateNumberRoman: rom,
-          plateLabel: `PLATE ${rom} OF ${romans[Math.min(2, rawPages.length - 1)] || "III"}`,
-          title: caption,
-          illustrationPrompt: p.illustrationPrompt || p.scenePrompt || opts.prompt,
-          imageUrl: matchedImg,
-          imageDataUrl: matchedImg,
-        },
-      ],
-      dialogueLines,
-    };
-  });
-
-  const author = raw.author || "Gemini Managed Agent (gemini-4-argon)";
-  const coverImg =
-    (raw.coverImageUrl && imageAssets[raw.coverImageUrl]) ||
-    imageAssets["images/cover.png"] ||
-    imageAssets["cover.png"] ||
-    pages[0]?.imageUrl ||
-    fallback.coverImageUrl;
-
-  return {
-    ...fallback,
-    id: raw.id || `managed_${Date.now()}`,
-    roman: "I",
-    bookHeaderLeft:
-      raw.bookHeaderLeft || `BOOK I  ·  ${author.toUpperCase()}`,
-    year: String(raw.year || "1815"),
-    genreFooterLeft: (
-      raw.genreFooterLeft || "ILLUSTRATED FAIRYTALE FOLIO"
-    ).toUpperCase(),
-    settingFooterRight: (
-      raw.settingFooterRight || "CHAMBER EDITION · GEMINI MANAGED AGENT"
-    ).toUpperCase(),
-    title: raw.title || fallback.title,
-    subtitle: raw.subtitle || "Chapter I",
-    author,
-    palette: pal,
-    coverImageUrl: coverImg,
-    ...(masterAudioData ? { masterAudioUrl: masterAudioData } : {}),
-    ...(ambientAudioData ? { backgroundMusicUrl: ambientAudioData } : {}),
-    pages,
-  };
-}
-
-/**
  * Runs the Gemini Managed Agent (`antigravity-preview-09-2026` with `gemini-4-argon`)
- * to craft a 3-folio illustrated audiobook following the `classic-audiobooks` pipeline:
- * 1. Tries `/api/generate-storybook` when served by the Node/Express backend.
- * 2. Tries direct browser CORS streaming against `POST https://generativelanguage.googleapis.com/v1beta/interactions`
- *    when hosted as a static bundle.
+ * via the server-side `/api/generate-storybook` endpoint.
  */
 export async function runManagedAgentStorybook(
   opts: RunStorybookAgentOptions
 ): Promise<RunStorybookAgentResult> {
   const agentName = opts.agentName || DEFAULT_MANAGED_AGENT_ID;
   const modelName = opts.modelName || DEFAULT_MANAGED_AGENT_MODEL;
-  const apiKey = getApiKey(opts.apiKey);
 
   opts.onStageChange(0, `Stage I · Booting ${agentName} (${modelName}) & installing gemini-api-cli`);
   opts.onLog({
@@ -516,300 +142,34 @@ export async function runManagedAgentStorybook(
     detail: "Mounting .agents/AGENTS.md, .agents/skills/*, and classic-audiobooks pipeline",
   });
 
-  const isX20Web =
-    typeof window !== "undefined" &&
-    (window.location.hostname.includes("x20web") ||
-      window.location.origin === "null");
-
-  if (!isX20Web) {
-    try {
-      const response = await fetch("/api/generate-storybook", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: opts.prompt,
-          classicBookTitle: opts.classicBookTitle,
-          visualStyle: opts.visualStyle,
-          pageCount: opts.pageCount,
-          narratorVoice: opts.narratorVoice,
-          agentName,
-          modelName,
-          environmentId: opts.environmentId,
-          previousInteractionId: opts.previousInteractionId,
-          sessionId: opts.sessionId,
-          apiKey,
-        }),
-        signal: opts.signal,
-      });
-
-      if (response.ok && response.body) {
-        const result = await consumeSseStream(response, opts, agentName, modelName);
-        if (result) return result;
-      }
-    } catch (err: any) {
-      if (err?.name === "AbortError") throw err;
-      // Fall through to direct browser /v1beta/interactions call
-    }
-  }
-
-  // Direct Browser CORS Call to POST https://generativelanguage.googleapis.com/v1beta/interactions
-  if (apiKey) {
-    try {
-      const directResult = await runDirectBrowserManagedAgent(
-        opts,
-        apiKey,
+  try {
+    const response = await fetch("/api/generate-storybook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: opts.prompt,
+        classicBookTitle: opts.classicBookTitle,
+        visualStyle: opts.visualStyle,
+        pageCount: opts.pageCount,
+        narratorVoice: opts.narratorVoice,
         agentName,
-        modelName
-      );
-      if (directResult) return directResult;
-    } catch (err: any) {
-      if (err?.name === "AbortError") throw err;
-      opts.onLog({
-        id: makeLogId(),
-        timestamp: nowTime(),
-        type: "status",
-        title: "Direct /v1beta/interactions notice — falling back to Gemini Flash studio pipeline",
-        detail: err?.message || String(err),
-      });
+        modelName,
+        environmentId: opts.environmentId,
+        previousInteractionId: opts.previousInteractionId,
+        sessionId: opts.sessionId,
+      }),
+      signal: opts.signal,
+    });
+
+    if (response.ok && response.body) {
+      const result = await consumeSseStream(response, opts, agentName, modelName);
+      if (result) return result;
     }
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw err;
   }
 
   return runClientSideClassicAudiobooksPipeline(opts);
-}
-
-/**
- * Calls `POST https://generativelanguage.googleapis.com/v1beta/interactions` directly from the browser
- * using CORS-allowed headers (`Content-Type: application/json`, `x-goog-api-key`) so static hosts
- * execute the real `antigravity-preview-09-2026` (`gemini-4-argon`) sandbox directly!
- */
-async function runDirectBrowserManagedAgent(
-  opts: RunStorybookAgentOptions,
-  apiKey: string,
-  agentName: string,
-  modelName: string
-): Promise<RunStorybookAgentResult | null> {
-  const inlineSources = getInlineBrowserAgentSources();
-  const fullPrompt = [
-    opts.classicBookTitle
-      ? `Create an illustrated 3-folio storybook and dramatized multi-voice audiobook adaptation of "${opts.classicBookTitle}".`
-      : `Create an original 3-folio illustrated storybook and dramatized multi-voice audiobook based on this request: "${opts.prompt}".`,
-    `Target number of folios: 3 (FOLIO I.1, FOLIO I.2, FOLIO I.3).`,
-    opts.visualStyle ? `Visual art direction: ${opts.visualStyle}.` : "",
-    `Primary Storyteller / Narrator voice: ${opts.narratorVoice}.`,
-    "Follow .agents/AGENTS.md strictly: install gemini-api-cli via https://raw.githubusercontent.com/google-gemini/gemini-api-cli/main/scripts/install.sh, generate at least 1 illustration plate (images/scene_1.png) with `gemini-api image -m gemini-3.1-flash-lite-image -a 16:9` and 1 narration turn (audio/turn_00.wav) with `gemini-api tts -m gemini-3.1-flash-tts-preview`, write `storybook.json` in the workspace root, and output the final JSON block in your response.",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const res = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/interactions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        agent: agentName,
-        agent_config: { type: "antigravity", model: modelName },
-        input: [{ type: "text", text: fullPrompt }],
-        stream: true,
-        ...(opts.previousInteractionId
-          ? { previous_interaction_id: opts.previousInteractionId }
-          : {}),
-        environment: opts.environmentId
-          ? opts.environmentId
-          : {
-              type: "remote",
-              sources: inlineSources,
-              env: { GEMINI_API_KEY: apiKey },
-            },
-      }),
-      signal: opts.signal,
-    }
-  );
-
-  if (!res.ok || !res.body) {
-    const errText = await res.text();
-    throw new Error(`HTTP ${res.status}: ${errText.slice(0, 300)}`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  let activeEnvId = opts.environmentId;
-  let interactionId = "";
-  let fullText = "";
-  let streamFinished = false;
-
-  while (!streamFinished) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() || "";
-
-    for (const rawLine of lines) {
-      const line = rawLine.replace(/\r$/, "");
-      if (!line.startsWith("data:")) continue;
-      const raw = line.slice(5).trim();
-      if (!raw) continue;
-      if (raw === "[DONE]") {
-        streamFinished = true;
-        break;
-      }
-      try {
-        const evt = JSON.parse(raw);
-        const envId =
-          evt.interaction?.environment?.env_id ||
-          evt.interaction?.environment_id ||
-          evt.environment?.env_id ||
-          evt.environment_id;
-        if (envId) {
-          activeEnvId = String(envId)
-            .replace(/^environments\//, "")
-            .replace(/^environment-/, "");
-        }
-        if (evt.interaction?.id && !interactionId) {
-          interactionId = evt.interaction.id;
-          opts.onCreated?.(interactionId, activeEnvId);
-          opts.onLog({
-            id: makeLogId(),
-            timestamp: nowTime(),
-            type: "status",
-            title: `Sandbox container provisioned (${activeEnvId || "remote"})`,
-            detail: `Interaction: ${interactionId} · ${agentName} (${modelName})`,
-          });
-        }
-
-        if (evt.step) {
-          const st = evt.step;
-          if (st.type === "thought") {
-            const summaries = Array.isArray(st.summary) ? st.summary : [];
-            const txt = summaries
-              .map((s: any) => s?.text || "")
-              .join("\n")
-              .trim();
-            if (txt) {
-              const stage = inferPipelineStage("thought", "", txt);
-              if (stage) opts.onStageChange(stage.index, stage.label);
-              opts.onLog({
-                id: makeLogId(),
-                timestamp: nowTime(),
-                type: "thinking",
-                title: `${modelName} reasoning`,
-                detail: txt,
-              });
-            }
-          } else if (
-            st.type === "code_execution_call" ||
-            st.type === "function_call" ||
-            st.type === "tool_call"
-          ) {
-            const stage = inferPipelineStage(st.name || "bash", st.arguments, "");
-            if (stage) opts.onStageChange(stage.index, stage.label);
-            opts.onLog({
-              id: makeLogId(),
-              timestamp: nowTime(),
-              type: "tool_call",
-              title: `Sandbox Tool → ${st.name || "bash"}`,
-              detail:
-                typeof st.arguments === "string"
-                  ? st.arguments
-                  : JSON.stringify(st.arguments),
-            });
-          } else if (
-            st.type === "code_execution_result" ||
-            st.type === "function_result" ||
-            st.type === "tool_result"
-          ) {
-            const resStr =
-              typeof st.result === "string"
-                ? st.result
-                : JSON.stringify(st.result);
-            opts.onLog({
-              id: makeLogId(),
-              timestamp: nowTime(),
-              type: "tool_result",
-              title: `Tool Output (${st.name || "bash"})`,
-              detail: resStr.slice(0, 500),
-              isError: Boolean(st.is_error),
-            });
-          }
-        }
-
-        if (evt.delta?.thought) {
-          const stage = inferPipelineStage("thought", "", evt.delta.thought);
-          if (stage) opts.onStageChange(stage.index, stage.label);
-          opts.onLog({
-            id: makeLogId(),
-            timestamp: nowTime(),
-            type: "thinking",
-            title: `${modelName} reasoning`,
-            detail: evt.delta.thought,
-          });
-        }
-        if (evt.delta?.text) {
-          fullText += evt.delta.text;
-        }
-        if (
-          evt.event_type === "interaction.completed" ||
-          evt.event_type === "interaction.failed"
-        ) {
-          streamFinished = true;
-          break;
-        }
-      } catch {
-        // ignore partial JSON frame
-      }
-    }
-  }
-
-  try {
-    await reader.cancel();
-  } catch {}
-
-  let storybookData: any = null;
-  let imageAssets: Record<string, string> = {};
-  let audioAssets: Record<string, string> = {};
-
-  if (activeEnvId) {
-    opts.onStageChange(
-      4,
-      `Stage V · Downloading individual plates & audio files from sandbox (${activeEnvId.slice(0, 12)})`
-    );
-    try {
-      const downloaded = await downloadBrowserEnvironmentAssets(
-        activeEnvId,
-        apiKey,
-        opts.signal
-      );
-      storybookData = downloaded.storybookData;
-      imageAssets = downloaded.imageAssets;
-      audioAssets = downloaded.audioAssets;
-    } catch {
-      // Fall back to JSON extracted from response stream
-    }
-  }
-
-  if (!storybookData && fullText) {
-    storybookData = extractFirstJsonObject(fullText);
-  }
-
-  const normalized = normalizeBrowserManagedStorybook(
-    storybookData,
-    opts,
-    imageAssets,
-    audioAssets
-  );
-
-  return {
-    storybook: normalized,
-    interactionId,
-    environmentId: activeEnvId,
-    agent: agentName,
-    model: modelName,
-  };
 }
 
 async function consumeSseStream(
@@ -936,7 +296,6 @@ async function consumeSseStream(
 async function runClientSideClassicAudiobooksPipeline(
   opts: RunStorybookAgentOptions
 ): Promise<RunStorybookAgentResult> {
-  const apiKey = getApiKey(opts.apiKey);
   const agentName = opts.agentName || DEFAULT_MANAGED_AGENT_ID;
   const modelName = opts.modelName || DEFAULT_MANAGED_AGENT_MODEL;
   const interactionId = `inter_${Date.now().toString(36)}`;
@@ -966,9 +325,9 @@ async function runClientSideClassicAudiobooksPipeline(
 
   let resultStorybook: Storybook;
 
-  if (apiKey && !matchedClassic) {
+  if (!matchedClassic) {
     try {
-      resultStorybook = await generateLiveGeminiFolioStorybook(opts, apiKey);
+      resultStorybook = await generateLiveGeminiFolioStorybook(opts);
       return {
         storybook: resultStorybook,
         interactionId,
@@ -1009,10 +368,9 @@ async function runClientSideClassicAudiobooksPipeline(
 }
 
 async function generateLiveGeminiFolioStorybook(
-  opts: RunStorybookAgentOptions,
-  apiKey: string
+  opts: RunStorybookAgentOptions
 ): Promise<Storybook> {
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI();
   const pal =
     EDITION_PALETTES[opts.paletteKey || "regency"]?.palette ||
     EDITION_PALETTES.regency.palette;
@@ -1197,7 +555,7 @@ export async function generateStudioIllustration(
   prompt: string,
   aspectRatio: "16:9" | "4:3" | "3:4" | "1:1" = "16:9"
 ): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const ai = new GoogleGenAI();
   const response = await ai.models.generateContent({
     model: "gemini-3.1-flash-lite-image",
     contents: prompt,
@@ -1264,7 +622,7 @@ export async function synthesizeStudioPageAudio(
   fallbackText: string,
   defaultVoice = "Kore"
 ): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const ai = new GoogleGenAI();
   const lines =
     dialogueLines && dialogueLines.length > 0
       ? dialogueLines
@@ -1317,7 +675,7 @@ export async function synthesizeStudioPageAudio(
   }
 
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-flash-tts-preview",
+    model: "gemini-3.8-flash-tts",
     contents: promptText,
     config: {
       responseModalities: [Modality.AUDIO],
@@ -1328,7 +686,7 @@ export async function synthesizeStudioPageAudio(
   const base64Audio =
     response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
   if (!base64Audio) {
-    throw new Error("No audio data returned from gemini-3.1-flash-tts-preview");
+    throw new Error("No audio data returned from gemini-3.8-flash-tts");
   }
 
   return pcmBase64ToWavDataUri(base64Audio, 24000);

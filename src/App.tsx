@@ -18,6 +18,11 @@ import {
   runManagedAgentStorybook,
   synthesizeStudioPageAudio,
 } from "./services/storybookAgentService";
+import { downloadStorybookPdf } from "./services/folioExporter";
+import {
+  ambientSoundEngine,
+  resolveSceneAmbientProfile,
+} from "./services/ambientSoundService";
 import { AgentLogEntry, Storybook, StorybookPalette } from "./types";
 
 const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI"];
@@ -52,6 +57,59 @@ const PIPELINE_STAGES = [
     code: "STAGE V · CHAMBER SCORE & BINDING",
     title:
       "Composing the Lyria 3.5 acoustic chamber score and binding all three folios into the open-book spread.",
+  },
+];
+
+const READER_KEYBOARD_SHORTCUTS = [
+  {
+    group: "NARRATION & FOLIO NAVIGATION",
+    items: [
+      {
+        keys: ["Space"],
+        label: "Pause or resume narration",
+        detail: "Toggles multi-voice performance and synchronized paragraph ink",
+      },
+      {
+        keys: ["→", "↓"],
+        label: "Next dialogue turn or folio",
+        detail: "Advances to the next spoken line, or turns to the next folio",
+      },
+      {
+        keys: ["←", "↑"],
+        label: "Previous dialogue turn or folio",
+        detail: "Returns to the preceding line, or turns back to the prior folio",
+      },
+    ],
+  },
+  {
+    group: "PLATES, SCORE & REFERENCE LEAVES",
+    items: [
+      {
+        keys: ["P"],
+        label: "Cycle illustration plate",
+        detail: "Switches between 3D diorama, watercolour plate, and character sheet",
+      },
+      {
+        keys: ["M"],
+        label: "Toggle chamber score",
+        detail: "Mutes or unmutes the background Lyria 3.5 chamber music",
+      },
+      {
+        keys: ["A"],
+        label: "Toggle ambient sound",
+        detail: "Layers subtle scene sound effects mapped to the active folio",
+      },
+      {
+        keys: ["?"],
+        label: "Keyboard shortcuts leaf",
+        detail: "Opens or dismisses this keyboard reference guide",
+      },
+      {
+        keys: ["Esc"],
+        label: "Close active leaf",
+        detail: "Dismisses the Title Leaf, Colophon, or Shortcuts overlay",
+      },
+    ],
   },
 ];
 
@@ -148,6 +206,7 @@ export default function App() {
   const [showOpeningTitleCard, setShowOpeningTitleCard] = useState<boolean>(false);
   const [showTitleCardModal, setShowTitleCardModal] = useState<boolean>(false);
   const [showAgentSpecModal, setShowAgentSpecModal] = useState<boolean>(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
 
   // Active Storybook & Classic Library
   const [storybook, setStorybook] = useState<Storybook>(() =>
@@ -173,16 +232,6 @@ export default function App() {
   const [narratorVoice, setNarratorVoice] = useState<string>("Kore");
   const [agentName, setAgentName] = useState<string>(DEFAULT_MANAGED_AGENT_ID);
   const [modelName, setModelName] = useState<string>(DEFAULT_MANAGED_AGENT_MODEL);
-  const [apiKeyInput, setApiKeyInput] = useState<string>(() => {
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        return window.localStorage.getItem("FOLIO_GEMINI_API_KEY") || "";
-      }
-    } catch {
-      // Null-origin sandbox blocks localStorage
-    }
-    return "";
-  });
 
   // Managed Agent Execution State
   const [isRunningAgent, setIsRunningAgent] = useState<boolean>(false);
@@ -197,8 +246,10 @@ export default function App() {
   // Audio Playback & Chamber Score State
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [isMusicEnabled, setIsMusicEnabled] = useState<boolean>(true);
+  const [isAmbientSoundEnabled, setIsAmbientSoundEnabled] = useState<boolean>(false);
   const [isSynthesizingAudio, setIsSynthesizingAudio] = useState<boolean>(false);
   const [isRegeneratingPlate, setIsRegeneratingPlate] = useState<boolean>(false);
+  const [isDownloadingFolio, setIsDownloadingFolio] = useState<boolean>(false);
   const [statusNote, setStatusNote] = useState<string | null>(null);
 
   // Mutable refs for 60fps/80ms timeline loop so closures never read stale state
@@ -282,6 +333,8 @@ export default function App() {
     Math.min(1, (playbackTimeSec - titleEndSec) / Math.max(1, totalDurSec - titleEndSec))
   );
 
+  const activeAmbientProfile = resolveSceneAmbientProfile(storybook, currentPage);
+
   // Stop all active audio & timers cleanly
   const stopAllPlayback = () => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -299,8 +352,17 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (isAmbientSoundEnabled && viewMode === "reader") {
+      ambientSoundEngine.start(activeAmbientProfile);
+    } else {
+      ambientSoundEngine.stop();
+    }
+  }, [isAmbientSoundEnabled, viewMode, activeAmbientProfile]);
+
+  useEffect(() => {
     return () => {
       stopAllPlayback();
+      ambientSoundEngine.stop();
     };
   }, []);
 
@@ -591,6 +653,8 @@ export default function App() {
     stopAllPlayback();
     setShowOpeningTitleCard(false);
     setShowTitleCardModal(false);
+    setShowAgentSpecModal(false);
+    setShowShortcutsModal(false);
     setIsPageTurning(true);
     setViewMode("cover");
     setTimeout(() => {
@@ -628,7 +692,42 @@ export default function App() {
   // Cycle through the current folio's plates (3D pop-up diorama -> 2D watercolour plate -> character sheet)
   const handleCyclePlate = () => {
     if (plates.length <= 1) return;
-    setManualPlateIdx((resolvedPlateIdx + 1) % plates.length);
+    const nextIdx = (resolvedPlateIdx + 1) % plates.length;
+    setManualPlateIdx(nextIdx);
+    setStatusNote(`Viewing Plate ${nextIdx + 1} of ${plates.length}`);
+    setTimeout(() => setStatusNote(null), 2500);
+  };
+
+  // Toggle background Lyria 3.5 chamber music
+  const handleToggleChamberMusic = () => {
+    const nextEnabled = !isMusicEnabled;
+    setIsMusicEnabled(nextEnabled);
+    const musicEl = getMusicAudioEl();
+    if (musicEl) {
+      if (!nextEnabled) {
+        musicEl.pause();
+      } else if (isPlayingAudio && !storybook.masterAudioUrl && storybook.backgroundMusicUrl) {
+        musicEl.src = storybook.backgroundMusicUrl;
+        musicEl.volume = 0.16;
+        musicEl.play().catch(() => {});
+      }
+    }
+    setStatusNote(nextEnabled ? "Chamber score enabled" : "Chamber score muted");
+    setTimeout(() => setStatusNote(null), 2500);
+  };
+
+  // Toggle subtle scene-mapped ambient sound effects (crackling fire, bird chirps, rain, etc.)
+  const handleToggleAmbientSound = () => {
+    const nextEnabled = !isAmbientSoundEnabled;
+    setIsAmbientSoundEnabled(nextEnabled);
+    if (nextEnabled) {
+      ambientSoundEngine.start(activeAmbientProfile);
+      setStatusNote(`Ambient Sound: ${activeAmbientProfile.label}`);
+    } else {
+      ambientSoundEngine.stop();
+      setStatusNote("Ambient Sound muted");
+    }
+    setTimeout(() => setStatusNote(null), 3200);
   };
 
   // Commission a new Storybook via the Gemini Managed Agent (`antigravity-preview-09-2026` / `gemini-4-argon`)
@@ -639,16 +738,6 @@ export default function App() {
     setAgentLogs([]);
     setActiveStageIdx(0);
     setActiveStageLabel("Booting Managed Agent Sandbox");
-
-    if (apiKeyInput.trim()) {
-      try {
-        if (typeof window !== "undefined" && window.localStorage) {
-          window.localStorage.setItem("FOLIO_GEMINI_API_KEY", apiKeyInput.trim());
-        }
-      } catch {
-        // Null-origin sandbox blocks localStorage
-      }
-    }
 
     setIsPageTurning(true);
     setViewMode("crafting");
@@ -669,7 +758,6 @@ export default function App() {
         narratorVoice,
         agentName,
         modelName,
-        apiKey: apiKeyInput.trim(),
         environmentId,
         previousInteractionId: interactionId,
         sessionId: `session_${Date.now()}`,
@@ -768,17 +856,33 @@ export default function App() {
       setStatusNote("Plate engraved on #F6F2EA archival paper");
       setTimeout(() => setStatusNote(null), 3500);
     } catch {
-      setStatusNote("Set GEMINI_API_KEY in Colophon to engrave plates live");
+      setStatusNote("Check your API key in Settings > Secrets to engrave plates live");
       setTimeout(() => setStatusNote(null), 3500);
     } finally {
       setIsRegeneratingPlate(false);
     }
   };
 
-  // Keyboard navigation in Reader mode (←/→/↑/↓ for turns & folios, Space for play/pause)
+  // Capture and download the current Storybook state, plates, and text as a structured archival PDF folio
+  const handleDownloadFolio = async () => {
+    if (isDownloadingFolio) return;
+    setIsDownloadingFolio(true);
+    setStatusNote("Binding archival PDF folio…");
+    try {
+      const filename = await downloadStorybookPdf(storybook, currentPageIdx);
+      setStatusNote(`Downloaded ${filename}`);
+      setTimeout(() => setStatusNote(null), 3500);
+    } catch {
+      setStatusNote("Could not export PDF folio");
+      setTimeout(() => setStatusNote(null), 3500);
+    } finally {
+      setIsDownloadingFolio(false);
+    }
+  };
+
+  // Keyboard navigation in Reader mode (←/→/↑/↓ for turns & folios, Space for play/pause, P for plates, M for music, ? for shortcuts, Esc to close)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (viewMode !== "reader" || showTitleCardModal || showAgentSpecModal) return;
       if (
         document.activeElement?.tagName === "INPUT" ||
         document.activeElement?.tagName === "TEXTAREA" ||
@@ -786,6 +890,27 @@ export default function App() {
       ) {
         return;
       }
+
+      if (e.key === "Escape") {
+        if (showShortcutsModal || showTitleCardModal || showAgentSpecModal) {
+          e.preventDefault();
+          setShowShortcutsModal(false);
+          setShowTitleCardModal(false);
+          setShowAgentSpecModal(false);
+        }
+        return;
+      }
+
+      if (viewMode !== "reader") return;
+
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowShortcutsModal((prev) => !prev);
+        return;
+      }
+
+      if (showTitleCardModal || showAgentSpecModal || showShortcutsModal) return;
+
       if (e.key === "ArrowDown" || e.key === "ArrowRight") {
         e.preventDefault();
         if (showOpeningTitleCard) {
@@ -806,6 +931,15 @@ export default function App() {
       } else if (e.key === " ") {
         e.preventDefault();
         handleToggleNarration();
+      } else if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        handleCyclePlate();
+      } else if (e.key === "m" || e.key === "M") {
+        e.preventDefault();
+        handleToggleChamberMusic();
+      } else if (e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        handleToggleAmbientSound();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -817,9 +951,15 @@ export default function App() {
     dialogueLines.length,
     storybook,
     isPlayingAudio,
+    isMusicEnabled,
+    isAmbientSoundEnabled,
+    activeAmbientProfile,
+    plates.length,
+    resolvedPlateIdx,
     showOpeningTitleCard,
     showTitleCardModal,
     showAgentSpecModal,
+    showShortcutsModal,
   ]);
 
   const formattedBookHeaderLeft = (
@@ -1750,6 +1890,19 @@ export default function App() {
               <span>·</span>
               <button
                 type="button"
+                onClick={handleToggleAmbientSound}
+                title={`Layer scene ambient sound: ${activeAmbientProfile.label} — ${activeAmbientProfile.description}`}
+                className={`austen-margin-link ${
+                  isAmbientSoundEnabled ? "is-active" : ""
+                }`}
+              >
+                {isAmbientSoundEnabled
+                  ? `AMBIENT SOUND (${activeAmbientProfile.shortTag})`
+                  : "AMBIENT SOUND"}
+              </button>
+              <span>·</span>
+              <button
+                type="button"
                 onClick={handleCyclePlate}
                 className="austen-margin-link"
               >
@@ -1763,6 +1916,16 @@ export default function App() {
                 className="austen-margin-link"
               >
                 {isRegeneratingPlate ? "ENGRAVING…" : "ENGRAVE PLATE"}
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={handleDownloadFolio}
+                disabled={isDownloadingFolio}
+                title="Download structured archival PDF of this Storybook Folio"
+                className="austen-margin-link"
+              >
+                {isDownloadingFolio ? "BINDING PDF…" : "DOWNLOAD FOLIO"}
               </button>
               {statusNote && (
                 <>
@@ -1839,6 +2002,15 @@ export default function App() {
                 className="austen-margin-link"
               >
                 COLOPHON
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={() => setShowShortcutsModal(true)}
+                title="Reader Keyboard Shortcuts (?)"
+                className="austen-margin-link"
+              >
+                SHORTCUTS (?)
               </button>
             </div>
           </div>
@@ -2096,7 +2268,7 @@ export default function App() {
               className="folio-colophon-grid"
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
+                gridTemplateColumns: "1fr 1fr",
                 gap: "16px",
                 marginBottom: "18px",
               }}
@@ -2148,49 +2320,6 @@ export default function App() {
                   type="text"
                   value={modelName}
                   onChange={(e) => setModelName(e.target.value)}
-                  style={{
-                    width: "100%",
-                    backgroundColor: "transparent",
-                    border: "none",
-                    borderBottom: "1px solid var(--folio-rule)",
-                    padding: "6px 2px",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "12px",
-                    color: "var(--folio-ink)",
-                    outline: "none",
-                  }}
-                />
-              </div>
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontFamily: "var(--font-cinzel)",
-                    fontSize: "11px",
-                    letterSpacing: "0.114em",
-                    color: "var(--folio-muted)",
-                    marginBottom: "4px",
-                  }}
-                >
-                  GEMINI API KEY
-                </label>
-                <input
-                  type="password"
-                  value={apiKeyInput}
-                  onChange={(e) => {
-                    setApiKeyInput(e.target.value);
-                    try {
-                      if (typeof window !== "undefined" && window.localStorage) {
-                        window.localStorage.setItem(
-                          "FOLIO_GEMINI_API_KEY",
-                          e.target.value.trim()
-                        );
-                      }
-                    } catch {
-                      // Null-origin sandbox blocks localStorage
-                    }
-                  }}
-                  placeholder="Uses server env or enter key…"
                   style={{
                     width: "100%",
                     backgroundColor: "transparent",
@@ -2262,6 +2391,224 @@ export default function App() {
               >
                 {AGENTS_MD_CONTENT}
               </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================
+          LEAF OVERLAY 3: READER KEYBOARD SHORTCUTS & FOLIATION GUIDE
+          ==================================================================== */}
+      {showShortcutsModal && (
+        <div
+          className="folio-modal-backdrop"
+          onClick={() => setShowShortcutsModal(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(30, 27, 24, 0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+            zIndex: 50,
+          }}
+        >
+          <div
+            className="folio-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shortcuts-leaf-title"
+            style={{
+              backgroundColor: "var(--folio-paper)",
+              border: "1px solid var(--folio-rule)",
+              padding: "6px",
+              maxWidth: "680px",
+              width: "100%",
+            }}
+          >
+            <div
+              className="folio-modal-inner"
+              style={{
+                border: "1px solid var(--folio-rule)",
+                padding: "26px 32px",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  borderBottom: "1px solid var(--folio-rule)",
+                  paddingBottom: "12px",
+                  marginBottom: "20px",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-cinzel)",
+                      fontSize: "12px",
+                      letterSpacing: "0.129em",
+                      color: "var(--folio-accent)",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    READER&rsquo;S KEY &amp; FOLIATION GUIDE
+                  </div>
+                  <h2
+                    id="shortcuts-leaf-title"
+                    style={{
+                      fontFamily: "var(--font-cormorant)",
+                      fontSize: "32px",
+                      fontWeight: 500,
+                      color: "var(--folio-ink)",
+                      margin: "4px 0 0",
+                    }}
+                  >
+                    Keyboard Shortcuts
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowShortcutsModal(false)}
+                  className="austen-margin-link"
+                >
+                  CLOSE &times;
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "22px",
+                }}
+              >
+                {READER_KEYBOARD_SHORTCUTS.map((section) => (
+                  <div key={section.group}>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-cinzel)",
+                        fontSize: "11.5px",
+                        letterSpacing: "0.129em",
+                        color: "var(--folio-accent)",
+                        textTransform: "uppercase",
+                        marginBottom: "10px",
+                      }}
+                    >
+                      {section.group}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                      }}
+                    >
+                      {section.items.map((item) => (
+                        <div key={item.label}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "baseline",
+                              gap: "10px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: "var(--font-garamond)",
+                                fontSize: "18.5px",
+                                fontWeight: 500,
+                                color: "var(--folio-ink)",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {item.label}
+                            </span>
+
+                            <span className="folio-contents-leader" />
+
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {item.keys.map((k, kIdx) => (
+                                <React.Fragment key={k}>
+                                  {kIdx > 0 && (
+                                    <span
+                                      style={{
+                                        fontFamily: "var(--font-garamond)",
+                                        fontStyle: "italic",
+                                        fontSize: "14px",
+                                        color: "var(--folio-muted)",
+                                      }}
+                                    >
+                                      or
+                                    </span>
+                                  )}
+                                  <kbd
+                                    style={{
+                                      backgroundColor: "var(--folio-card)",
+                                      border: "1px solid var(--folio-rule)",
+                                      padding: "2px 8px",
+                                      fontFamily: "var(--font-mono)",
+                                      fontSize: "12px",
+                                      color: "var(--folio-ink)",
+                                      lineHeight: 1.4,
+                                    }}
+                                  >
+                                    {k}
+                                  </kbd>
+                                </React.Fragment>
+                              ))}
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              fontFamily: "var(--font-garamond)",
+                              fontStyle: "italic",
+                              fontSize: "15.5px",
+                              color: "var(--folio-muted)",
+                              marginTop: "2px",
+                            }}
+                          >
+                            {item.detail}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  borderTop: "1px solid var(--folio-rule)",
+                  marginTop: "22px",
+                  paddingTop: "12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  fontFamily: "var(--font-cinzel)",
+                  fontSize: "11.5px",
+                  letterSpacing: "0.114em",
+                  color: "var(--folio-muted)",
+                  textTransform: "uppercase",
+                }}
+              >
+                <span>PRESS ? ANYTIME IN READER MODE</span>
+                <span>ESC TO DISMISS</span>
+              </div>
             </div>
           </div>
         </div>
