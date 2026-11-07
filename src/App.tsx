@@ -23,7 +23,26 @@ import {
   ambientSoundEngine,
   resolveSceneAmbientProfile,
 } from "./services/ambientSoundService";
+import { getFolioCharacterCast } from "./services/characterCastService";
 import { AgentLogEntry, Storybook, StorybookPalette } from "./types";
+
+interface VisitedFolioCrumb {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  roman: string;
+  pageIdx: number;
+  folioCode: string;
+  caption: string;
+}
+
+type ReaderBodyFont = "classic-garamond" | "clean-modernist" | "typewriter-mono";
+
+const READER_BODY_FONT_OPTIONS: { id: ReaderBodyFont; label: string }[] = [
+  { id: "classic-garamond", label: "Classic Garamond" },
+  { id: "clean-modernist", label: "Clean Modernist" },
+  { id: "typewriter-mono", label: "Typewriter Mono" },
+];
 
 const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI"];
 
@@ -222,6 +241,9 @@ export default function App() {
   const [activeLineIdx, setActiveLineIdx] = useState<number>(-1);
   const [playbackTimeSec, setPlaybackTimeSec] = useState<number>(0);
   const [manualPlateIdx, setManualPlateIdx] = useState<number | null>(null);
+  const [folioHistory, setFolioHistory] = useState<VisitedFolioCrumb[]>([]);
+  const [selectedCastCharacterId, setSelectedCastCharacterId] = useState<string | null>(null);
+  const [readerBodyFont, setReaderBodyFont] = useState<ReaderBodyFont>("classic-garamond");
 
   // Commission Folio State
   const [commissionPrompt, setCommissionPrompt] = useState<string>(
@@ -250,6 +272,7 @@ export default function App() {
   const [isSynthesizingAudio, setIsSynthesizingAudio] = useState<boolean>(false);
   const [isRegeneratingPlate, setIsRegeneratingPlate] = useState<boolean>(false);
   const [isDownloadingFolio, setIsDownloadingFolio] = useState<boolean>(false);
+  const [isCopiedShareLink, setIsCopiedShareLink] = useState<boolean>(false);
   const [statusNote, setStatusNote] = useState<string | null>(null);
 
   // Mutable refs for 60fps/80ms timeline loop so closures never read stale state
@@ -334,6 +357,9 @@ export default function App() {
   );
 
   const activeAmbientProfile = resolveSceneAmbientProfile(storybook, currentPage);
+  const folioCast = getFolioCharacterCast(storybook, currentPageIdx);
+  const selectedCastMember =
+    folioCast.find((m) => m.id === selectedCastCharacterId) || null;
 
   // Stop all active audio & timers cleanly
   const stopAllPlayback = () => {
@@ -359,11 +385,116 @@ export default function App() {
     }
   }, [isAmbientSoundEnabled, viewMode, activeAmbientProfile]);
 
+  // Track folios read in the current session as a breadcrumb trail
+  useEffect(() => {
+    if (viewMode !== "reader") return;
+    const page = storybook.pages[currentPageIdx] || storybook.pages[0];
+    if (!page) return;
+    const roman = storybook.roman || "I";
+    const folioCode = `${roman}.${currentPageIdx + 1}`;
+    const crumbId = `${storybook.id}:${currentPageIdx}`;
+    const caption = page.imageCaption || page.chapterTitle || storybook.title;
+
+    setFolioHistory((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].id === crumbId) {
+        return prev;
+      }
+      const next = [
+        ...prev,
+        {
+          id: crumbId,
+          bookId: storybook.id,
+          bookTitle: storybook.title,
+          roman,
+          pageIdx: currentPageIdx,
+          folioCode,
+          caption,
+        },
+      ];
+      return next.slice(-7);
+    });
+  }, [viewMode, storybook, currentPageIdx]);
+
   useEffect(() => {
     return () => {
       stopAllPlayback();
       ambientSoundEngine.stop();
     };
+  }, []);
+
+  // Automatically open a shared deep-link (?book=...&folio=...&turn=...) on initial load or popstate
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const applyDeepLinkFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const bookParam = params.get("book");
+      const folioParam = params.get("folio") || params.get("page");
+      const turnParam = params.get("turn") || params.get("line");
+
+      if (!bookParam && !folioParam && !turnParam) return;
+
+      let matchedBook: Storybook | undefined = ALL_CLASSIC_STORYBOOKS.find(
+        (b) =>
+          b.id === bookParam ||
+          (bookParam && b.id.toLowerCase().includes(bookParam.toLowerCase()))
+      );
+
+      if (!matchedBook && bookParam) {
+        try {
+          const cached = window.localStorage.getItem(
+            `folio_press_shared_book_${bookParam}`
+          );
+          if (cached) {
+            matchedBook = JSON.parse(cached) as Storybook;
+          }
+        } catch {}
+      }
+
+      const targetBook = ensureBookTimeline(
+        matchedBook || INITIAL_SHOWCASE_STORYBOOK
+      );
+      const pages = targetBook.pages || [];
+      const parsedFolio = parseInt(folioParam || "1", 10);
+      const targetPageIdx = Number.isFinite(parsedFolio)
+        ? Math.max(0, Math.min(parsedFolio - 1, Math.max(0, pages.length - 1)))
+        : 0;
+
+      const targetPage = pages[targetPageIdx] || pages[0];
+      const lines = targetPage?.dialogueLines || [];
+      const parsedTurn = parseInt(turnParam || "1", 10);
+      const targetTurnIdx = Number.isFinite(parsedTurn)
+        ? Math.max(0, Math.min(parsedTurn - 1, Math.max(0, lines.length - 1)))
+        : 0;
+
+      const targetLine = lines[targetTurnIdx];
+      const targetSec =
+        targetLine?.startSec ?? targetPage?.startSec ?? 5.4;
+
+      setStorybook(targetBook);
+      setLibrary((prev) =>
+        prev.some((b) => b.id === targetBook.id) ? prev : [targetBook, ...prev]
+      );
+      setShowOpeningTitleCard(false);
+      showOpeningTitleCardRef.current = false;
+      currentPageIdxRef.current = targetPageIdx;
+      activeLineIdxRef.current = targetTurnIdx;
+      setCurrentPageIdx(targetPageIdx);
+      setActiveLineIdx(targetTurnIdx);
+      setManualPlateIdx(null);
+      setViewMode("reader");
+      startBookNarration(targetBook, targetSec, false);
+      setStatusNote(
+        `Opened Folio ${targetBook.roman || "I"}.${targetPageIdx + 1} · Turn ${
+          targetTurnIdx + 1
+        }`
+      );
+      setTimeout(() => setStatusNote(null), 3500);
+    };
+
+    applyDeepLinkFromUrl();
+    window.addEventListener("popstate", applyDeepLinkFromUrl);
+    return () => window.removeEventListener("popstate", applyDeepLinkFromUrl);
   }, []);
 
   // Synchronize audio source & start auto-narration at `startAtSec`
@@ -648,6 +779,43 @@ export default function App() {
     startBookNarration(normalized, startFromTitleCard ? 0 : 5.4, startFromTitleCard);
   };
 
+  // Jump directly to a previously visited folio from the margin bar breadcrumb history
+  const handleJumpToBreadcrumb = (crumb: VisitedFolioCrumb, truncateToIdx?: number) => {
+    if (typeof truncateToIdx === "number") {
+      setFolioHistory((prev) => prev.slice(0, truncateToIdx + 1));
+    }
+
+    if (crumb.bookId === storybook.id && viewMode === "reader") {
+      seekToFolioAndTurn(crumb.pageIdx, 0);
+      setStatusNote(`Returned to Folio ${crumb.folioCode} — ${crumb.caption}`);
+      setTimeout(() => setStatusNote(null), 2800);
+      return;
+    }
+
+    const matchedBook =
+      library.find((b) => b.id === crumb.bookId) || storybook;
+    const normalized = ensureBookTimeline(matchedBook);
+    const targetPage = normalized.pages[crumb.pageIdx] || normalized.pages[0];
+    const startSec = targetPage?.dialogueLines?.[0]?.startSec ?? targetPage?.startSec ?? 5.4;
+
+    stopAllPlayback();
+    setStorybook(normalized);
+    currentPageIdxRef.current = crumb.pageIdx;
+    activeLineIdxRef.current = 0;
+    setCurrentPageIdx(crumb.pageIdx);
+    setActiveLineIdx(0);
+    setManualPlateIdx(null);
+    setIsPageTurning(true);
+    setViewMode("reader");
+    setTimeout(() => {
+      setIsPageTurning(false);
+    }, 650);
+
+    startBookNarration(normalized, startSec, false);
+    setStatusNote(`Returned to ${normalized.title} · Folio ${crumb.folioCode}`);
+    setTimeout(() => setStatusNote(null), 2800);
+  };
+
   // Turn back to the Title & Commission Folio
   const handleCloseBookToCover = () => {
     stopAllPlayback();
@@ -880,6 +1048,65 @@ export default function App() {
     }
   };
 
+  // Copy a deep-link to the current storybook, folio page, and dialogue turn to the user's clipboard
+  const handleShareFolio = async () => {
+    if (typeof window === "undefined") return;
+    const folioNum = currentPageIdx + 1;
+    const turnNum = resolvedActiveLineIdx + 1;
+
+    try {
+      const isBuiltIn = ALL_CLASSIC_STORYBOOKS.some((b) => b.id === storybook.id);
+      if (!isBuiltIn) {
+        window.localStorage.setItem(
+          `folio_press_shared_book_${storybook.id}`,
+          JSON.stringify(storybook)
+        );
+      }
+    } catch {}
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("book", storybook.id);
+    url.searchParams.set("folio", String(folioNum));
+    url.searchParams.set("turn", String(turnNum));
+    const shareUrl = url.toString();
+
+    try {
+      window.history.replaceState(null, "", shareUrl);
+    } catch {}
+
+    let copied = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        copied = true;
+      } catch {}
+    }
+
+    if (!copied) {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = shareUrl;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+        copied = true;
+      } catch {}
+    }
+
+    setIsCopiedShareLink(true);
+    setStatusNote(
+      `Copied link to Folio ${storybook.roman || "I"}.${folioNum}, Turn ${turnNum}`
+    );
+    setTimeout(() => {
+      setIsCopiedShareLink(false);
+      setStatusNote(null);
+    }, 3200);
+  };
+
   // Keyboard navigation in Reader mode (←/→/↑/↓ for turns & folios, Space for play/pause, P for plates, M for music, ? for shortcuts, Esc to close)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -892,11 +1119,17 @@ export default function App() {
       }
 
       if (e.key === "Escape") {
-        if (showShortcutsModal || showTitleCardModal || showAgentSpecModal) {
+        if (
+          showShortcutsModal ||
+          showTitleCardModal ||
+          showAgentSpecModal ||
+          selectedCastCharacterId
+        ) {
           e.preventDefault();
           setShowShortcutsModal(false);
           setShowTitleCardModal(false);
           setShowAgentSpecModal(false);
+          setSelectedCastCharacterId(null);
         }
         return;
       }
@@ -960,6 +1193,7 @@ export default function App() {
     showTitleCardModal,
     showAgentSpecModal,
     showShortcutsModal,
+    selectedCastCharacterId,
   ]);
 
   const formattedBookHeaderLeft = (
@@ -1260,7 +1494,26 @@ export default function App() {
 
           {/* Subtle Outer Margin Line below the bottom rule */}
           <div className="austen-margin-bar">
-            <div />
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              {folioHistory.length > 0 && (
+                <>
+                  <span>HISTORY:</span>
+                  {folioHistory.map((crumb, idx) => (
+                    <React.Fragment key={`${crumb.id}_${idx}`}>
+                      {idx > 0 && <span aria-hidden="true">&rsaquo;</span>}
+                      <button
+                        type="button"
+                        onClick={() => handleJumpToBreadcrumb(crumb, idx)}
+                        title={`Jump to ${crumb.bookTitle} · Folio ${crumb.folioCode} (${crumb.caption})`}
+                        className="austen-margin-link"
+                      >
+                        {crumb.folioCode}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </>
+              )}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
               <button
                 type="button"
@@ -1781,7 +2034,7 @@ export default function App() {
                 </div>
 
                 {/* Right-Page Literary Body: 3-State Paragraph Ink Highlighting */}
-                <div className="austen-folio-body">
+                <div className={`austen-folio-body font-${readerBodyFont}`}>
                   {dialogueLines.map((line, idx) => {
                     const prevSpeaker =
                       idx > 0 ? dialogueLines[idx - 1]?.speaker : null;
@@ -1927,6 +2180,44 @@ export default function App() {
               >
                 {isDownloadingFolio ? "BINDING PDF…" : "DOWNLOAD FOLIO"}
               </button>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={handleShareFolio}
+                title={`Copy deep-link to ${storybook.title} · Folio ${
+                  storybook.roman || "I"
+                }.${currentPageIdx + 1}, Turn ${resolvedActiveLineIdx + 1}`}
+                className={`austen-margin-link ${
+                  isCopiedShareLink ? "is-active" : ""
+                }`}
+              >
+                {isCopiedShareLink ? "LINK COPIED" : "SHARE FOLIO"}
+              </button>
+              <span>·</span>
+              <label
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+                title="Select Reader body text typeface"
+              >
+                <span>TYPEFACE:</span>
+                <select
+                  aria-label="Reader body text font"
+                  value={readerBodyFont}
+                  onChange={(e) =>
+                    setReaderBodyFont(e.target.value as ReaderBodyFont)
+                  }
+                  className="austen-margin-select"
+                >
+                  {READER_BODY_FONT_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {statusNote && (
                 <>
                   <span>·</span>
@@ -1946,7 +2237,39 @@ export default function App() {
               )}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+              {folioHistory.length > 0 && (
+                <>
+                  <nav
+                    aria-label="Session folio reading history"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <span>HISTORY:</span>
+                    {folioHistory.map((crumb, idx) => {
+                      const isCurrent =
+                        idx === folioHistory.length - 1 &&
+                        crumb.bookId === storybook.id &&
+                        crumb.pageIdx === currentPageIdx;
+                      return (
+                        <React.Fragment key={`${crumb.id}_${idx}`}>
+                          {idx > 0 && <span aria-hidden="true">&rsaquo;</span>}
+                          <button
+                            type="button"
+                            onClick={() => handleJumpToBreadcrumb(crumb, idx)}
+                            title={`${crumb.bookTitle} · Folio ${crumb.folioCode} — ${crumb.caption}`}
+                            className={`austen-margin-link ${
+                              isCurrent ? "is-active" : ""
+                            }`}
+                          >
+                            {crumb.folioCode}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+                  </nav>
+                  <span>·</span>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() =>
@@ -2014,6 +2337,225 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          {/* Scrollable Character Cast Strip (below Reader margin bar) */}
+          {folioCast.length > 0 && (
+            <div
+              className="austen-cast-strip"
+              role="region"
+              aria-label="Characters appearing in current folio"
+            >
+              <span className="austen-cast-label">
+                CHARACTER CAST &nbsp;·&nbsp; FOLIO{" "}
+                {`${storybook.roman || "I"}.${currentPageIdx + 1}`}
+              </span>
+
+              <div className="austen-cast-scroll">
+                {folioCast.map((member) => {
+                  const cleanMemberName = member.name
+                    .replace(/\s*\(.*?\)\s*/g, "")
+                    .toLowerCase();
+                  const activeSpeakerRaw = (
+                    activeLine?.speaker ||
+                    activeLine?.speakerLabel ||
+                    ""
+                  ).toLowerCase();
+                  const isSpeakingNow =
+                    activeLineIdx >= 0 &&
+                    activeLineIdx < 999 &&
+                    ((cleanMemberName.length > 2 &&
+                      activeSpeakerRaw.includes(cleanMemberName)) ||
+                      (member.role.toLowerCase().includes("narrat") &&
+                        activeSpeakerRaw.includes("narrat")));
+                  const isSelected = selectedCastCharacterId === member.id;
+
+                  return (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedCastCharacterId((prev) =>
+                          prev === member.id ? null : member.id
+                        )
+                      }
+                      aria-expanded={isSelected}
+                      title={`View character bio for ${member.name} (${member.voiceName})`}
+                      className={`austen-cast-item ${
+                        isSelected ? "is-selected" : ""
+                      } ${isSpeakingNow ? "is-speaking" : ""}`}
+                    >
+                      <div className="austen-cast-portrait">
+                        <div className="austen-cast-portrait-inner">
+                          <img
+                            src={member.portraitImageUrl}
+                            alt={member.name}
+                            style={{
+                              objectPosition: member.portraitObjectPosition,
+                              transform: `scale(${member.portraitScale})`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="austen-cast-meta">
+                        <span className="austen-cast-name">{member.name}</span>
+                        <span className="austen-cast-sub">
+                          {isSpeakingNow
+                            ? `Speaking now · ${member.voiceName}`
+                            : member.turnsInFolio > 0
+                            ? `${member.voiceName} · ${member.turnsInFolio} ${
+                                member.turnsInFolio === 1 ? "turn" : "turns"
+                              }`
+                            : `${member.voiceName} · In scene`}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Expandable Character Bio Leaf when a portrait thumbnail is clicked */}
+          {selectedCastMember && (
+            <div
+              className="austen-cast-bio-panel"
+              role="region"
+              aria-label={`Character biography for ${selectedCastMember.name}`}
+            >
+              <div className="austen-cast-bio-inner">
+                <div className="austen-cast-bio-portrait">
+                  <div className="austen-cast-portrait-inner">
+                    <img
+                      src={selectedCastMember.portraitImageUrl}
+                      alt={selectedCastMember.name}
+                      style={{
+                        objectPosition: selectedCastMember.portraitObjectPosition,
+                        transform: `scale(${selectedCastMember.portraitScale})`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-cinzel)",
+                      fontSize: "10.5px",
+                      letterSpacing: "0.125em",
+                      color: "var(--folio-accent)",
+                      textTransform: "uppercase",
+                      marginBottom: "2px",
+                    }}
+                  >
+                    DRAMATIS PERSONA &nbsp;·&nbsp; VOICE:{" "}
+                    {selectedCastMember.voiceName} &mdash;{" "}
+                    {selectedCastMember.voiceStyle}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: "10px",
+                      flexWrap: "wrap",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    <h3
+                      style={{
+                        fontFamily: "var(--font-cormorant)",
+                        fontSize: "25px",
+                        fontWeight: 500,
+                        color: "var(--folio-ink)",
+                        margin: 0,
+                        lineHeight: 1.15,
+                      }}
+                    >
+                      {selectedCastMember.name}
+                    </h3>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-garamond)",
+                        fontStyle: "italic",
+                        fontSize: "16.5px",
+                        color: "var(--folio-muted)",
+                      }}
+                    >
+                      &mdash; {selectedCastMember.shortTitle}
+                    </span>
+                  </div>
+
+                  <p
+                    style={{
+                      fontFamily: "var(--font-garamond)",
+                      fontSize: "17px",
+                      lineHeight: 1.42,
+                      color: "var(--folio-ink)",
+                      margin: "0 0 4px 0",
+                    }}
+                  >
+                    {selectedCastMember.bio}
+                  </p>
+
+                  <div
+                    style={{
+                      fontFamily: "var(--font-garamond)",
+                      fontStyle: "italic",
+                      fontSize: "15.5px",
+                      color: "var(--folio-muted)",
+                      lineHeight: 1.38,
+                    }}
+                  >
+                    In Folio {`${storybook.roman || "I"}.${currentPageIdx + 1}`}:{" "}
+                    {selectedCastMember.dramaticNote}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    gap: "10px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCastCharacterId(null)}
+                    className="austen-margin-link"
+                  >
+                    CLOSE &times;
+                  </button>
+
+                  {selectedCastMember.firstTurnIdx >= 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        seekToFolioAndTurn(
+                          currentPageIdx,
+                          selectedCastMember.firstTurnIdx
+                        )
+                      }
+                      className="austen-margin-link is-active"
+                      title={`Jump narration to ${selectedCastMember.name}'s first turn on this folio`}
+                    >
+                      HEAR IN FOLIO &rarr;
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowTitleCardModal(true)}
+                    className="austen-margin-link"
+                    title="Inspect full 16:9 period character reference sheet"
+                  >
+                    CHARACTER SHEET
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -12,6 +12,7 @@
   --font-cinzel: 'Cinzel', Georgia, serif;
   --font-cormorant: 'Cormorant Garamond', Georgia, serif;
   --font-garamond: 'EB Garamond', 'Cormorant Garamond', Georgia, serif;
+  --font-modernist: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
@@ -273,6 +274,34 @@ body,
   font-kerning: normal;
   text-rendering: optimizeLegibility;
   transition: color 0.22s ease;
+}
+
+/* Reader Body Font Selector Variants */
+.austen-folio-body.font-classic-garamond .austen-turn-text {
+  font-family: var(--font-garamond);
+  line-height: 1.44;
+}
+
+.austen-folio-body.font-clean-modernist {
+  font-size: clamp(17.5px, 1.18vw, 21.5px);
+}
+
+.austen-folio-body.font-clean-modernist .austen-turn-text {
+  font-family: var(--font-modernist);
+  line-height: 1.54;
+  letter-spacing: -0.008em;
+  font-variant-numeric: normal;
+}
+
+.austen-folio-body.font-typewriter-mono {
+  font-size: clamp(15px, 1.02vw, 18.5px);
+}
+
+.austen-folio-body.font-typewriter-mono .austen-turn-text {
+  font-family: var(--font-mono);
+  line-height: 1.58;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 3-State Paragraph Ink (pre-blended toward --folio-paper via color-mix, matching render_audiobook_video.py) */
@@ -552,6 +581,207 @@ body,
   opacity: 0.35;
   cursor: default;
 }
+
+.austen-margin-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dotted var(--folio-rule);
+  padding: 0 2px 1px;
+  font-family: var(--font-cinzel);
+  font-size: 11px;
+  letter-spacing: 0.125em;
+  text-transform: uppercase;
+  color: var(--folio-accent);
+  cursor: pointer;
+  outline: none;
+  transition: color 0.16s ease, border-color 0.16s ease;
+}
+
+.austen-margin-select:hover,
+.austen-margin-select:focus {
+  color: var(--folio-ink);
+  border-bottom-style: solid;
+  border-bottom-color: var(--folio-accent);
+}
+
+.austen-margin-select option {
+  background-color: var(--folio-paper);
+  color: var(--folio-ink);
+  font-family: var(--font-garamond);
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ============================================================================
+   SCROLLABLE CHARACTER CAST STRIP & BIO LEAF (BELOW READER MARGIN BAR)
+   Displays small matted portrait thumbnails for characters in the current folio
+   ============================================================================ */
+
+.austen-cast-strip {
+  width: 100%;
+  max-width: 1800px;
+  margin: 8px auto 0;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--folio-rule) 75%, var(--folio-paper));
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  opacity: 0.82;
+  transition: opacity 0.22s ease;
+}
+
+.austen-cast-strip:hover,
+.austen-cast-strip:focus-within {
+  opacity: 1;
+}
+
+.austen-cast-label {
+  font-family: var(--font-cinzel);
+  font-size: 11px;
+  letter-spacing: 0.125em;
+  text-transform: uppercase;
+  color: var(--folio-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.austen-cast-scroll {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--folio-rule) transparent;
+  flex: 1;
+  min-width: 0;
+}
+
+.austen-cast-scroll::-webkit-scrollbar {
+  height: 3px;
+}
+
+.austen-cast-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.austen-cast-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--folio-rule);
+}
+
+.austen-cast-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  padding: 2px 4px 3px 0;
+  cursor: pointer;
+  text-align: left;
+  flex-shrink: 0;
+  color: var(--folio-ink);
+  transition: border-color 0.18s ease, opacity 0.18s ease;
+}
+
+.austen-cast-item:hover {
+  border-bottom-color: var(--folio-rule);
+}
+
+.austen-cast-item.is-selected {
+  border-bottom-color: var(--folio-accent);
+}
+
+.austen-cast-portrait {
+  width: 38px;
+  height: 38px;
+  background-color: var(--folio-card);
+  border: 1px solid var(--folio-rule);
+  padding: 2px;
+  flex-shrink: 0;
+  transition: border-color 0.18s ease;
+}
+
+.austen-cast-item.is-selected .austen-cast-portrait,
+.austen-cast-item.is-speaking .austen-cast-portrait {
+  border-color: var(--folio-accent);
+}
+
+.austen-cast-portrait-inner {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--folio-paper);
+  position: relative;
+}
+
+.austen-cast-portrait-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.austen-cast-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.austen-cast-name {
+  font-family: var(--font-cinzel);
+  font-size: 11.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--folio-ink);
+  line-height: 1.25;
+}
+
+.austen-cast-item.is-selected .austen-cast-name,
+.austen-cast-item.is-speaking .austen-cast-name {
+  color: var(--folio-accent);
+}
+
+.austen-cast-sub {
+  font-family: var(--font-garamond);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--folio-muted);
+  line-height: 1.15;
+}
+
+.austen-cast-bio-panel {
+  width: 100%;
+  max-width: 1800px;
+  margin: 8px auto 0;
+  background-color: var(--folio-card);
+  border: 1px solid var(--folio-rule);
+  padding: 5px;
+  animation: titleCardFadeIn 0.22s ease-out;
+}
+
+.austen-cast-bio-inner {
+  background-color: var(--folio-paper);
+  border: 1px solid var(--folio-rule);
+  padding: 14px 20px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 20px;
+  align-items: center;
+}
+
+.austen-cast-bio-portrait {
+  width: 78px;
+  height: 78px;
+  background-color: var(--folio-card);
+  border: 1px solid var(--folio-rule);
+  padding: 4px;
+  flex-shrink: 0;
+}
+
 
 /* Spine-hinged leaf flip animation when turning folios or opening a volume */
 .folio-page-turning {
@@ -908,6 +1138,19 @@ body,
   .folio-colophon-grid {
     grid-template-columns: 1fr !important;
     gap: 12px !important;
+  }
+  .austen-cast-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .austen-cast-scroll {
+    width: 100%;
+  }
+  .austen-cast-bio-inner {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px;
   }
 }
 
