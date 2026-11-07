@@ -1,0 +1,8 @@
+{
+  "name": "Remix Audio Storybook Generator - Managed Agent",
+  "description": "An autonomous illustrated storybook \u0026 dramatized classic audiobook studio powered by the Gemini Managed Agent and the Gemini API CLI across the Gemini model catalog.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
