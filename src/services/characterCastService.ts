@@ -1,10 +1,13 @@
 import { CharacterVoice, Storybook, StorybookPage } from "../types";
+import { resolveVoiceProfile, VoiceGender } from "./characterVoiceEngine";
 
 export interface FolioCastMember {
   id: string;
   name: string;
   role: string;
   voiceName: string;
+  voiceGender: VoiceGender;
+  voiceRegisterLabel: string;
   voiceStyle: string;
   shortTitle: string;
   bio: string;
@@ -23,6 +26,7 @@ interface CuratedCharacterMeta {
   shortTitle: string;
   bio: string;
   dramaticNote: string;
+  portraitImageUrl?: string;
   portraitObjectPosition: string;
   portraitScale: number;
   useScenePlateIdx?: number;
@@ -177,59 +181,155 @@ const CURATED_CHARACTER_BIOS: Record<string, CuratedCharacterMeta> = {
   },
 
   // Sri Lankan Sinhala Storybooks (මහදැනමුත්තා, අන්දරේ, මඩොල් දූව, ගුත්තිල ජාතකය)
+  sinhala_narrator: {
+    shortTitle: "ගැමි කථකාවිය · Traditional Village Storyteller (Female)",
+    bio: "The warm evening voice of the Sri Lankan village ambalama (wayside rest-house), recounting humorous folktales passed down across generations.",
+    dramaticNote:
+      "Introduces Mahadenamutta and his five literal-minded disciples as they walk through the village.",
+    portraitImageUrl: "/src/assets/images/sinhala_mahadenamutta_plate_1794083182720.jpg",
+    portraitObjectPosition: "64% 34%",
+    portraitScale: 2.1,
+    aliases: ["කථකාවිය", "කථකයා", "Narrator"],
+  },
+  village_narrator: {
+    shortTitle: "ගැමි කථකාවිය · Traditional Village Storyteller (Female)",
+    bio: "The warm evening voice of the Sri Lankan village ambalama (wayside rest-house), recounting humorous folktales passed down across generations.",
+    dramaticNote:
+      "Introduces Mahadenamutta and his five literal-minded disciples as they walk through the village.",
+    portraitImageUrl: "/src/assets/images/sinhala_mahadenamutta_plate_1794083182720.jpg",
+    portraitObjectPosition: "64% 34%",
+    portraitScale: 2.1,
+    aliases: ["කථකාවිය", "කථකයා", "Narrator"],
+  },
+  village_housewife: {
+    shortTitle: "ගෙදර කාන්තාව · Distressed Village Housewife (Female)",
+    bio: "The owner of the clay pot (muttiya) and the unfortunate goat in the village courtyard, who calls upon Mahadenamutta hoping his famed wisdom will save both.",
+    dramaticNote:
+      "Cries out in alarm as her goat struggles with its head trapped inside the clay pot.",
+    portraitImageUrl: "/src/assets/images/sinhala_mahadenamutta_plate_1794083182720.jpg",
+    portraitObjectPosition: "80% 44%",
+    portraitScale: 2.2,
+    aliases: ["ගෙදර කාන්තාව", "කාන්තාව", "Housewife"],
+  },
   mahadenamutta: {
-    shortTitle: "මහදැනමුත්තා · The Village Sage of the Ola-Leaf Book",
+    shortTitle: "මහදැනමුත්තා · The Village Sage of the Ola-Leaf Book (Male)",
     bio: "A beloved archetype of Sri Lankan Sinhala folklore: an elderly, self-important sage who never makes a practical decision without consulting his inherited palm-leaf manuscript (puskola potha), leading his five disciples into comical misadventures.",
     dramaticNote:
       "Solemnly consults his puskola potha and decrees that the villager’s goat must be beheaded first and the clay pot smashed afterward.",
-    portraitObjectPosition: "32% 30%",
-    portraitScale: 1.75,
+    portraitImageUrl: "/src/assets/images/sinhala_characters_sheet_1794083189464.jpg",
+    portraitObjectPosition: "15% 22%",
+    portraitScale: 2.5,
     aliases: ["මහදැනමුත්තා", "Mahadenamutta"],
   },
   polbaa_muna: {
-    shortTitle: "පොල්බෑ මූණා · Chief Disciple of Mahadenamutta",
+    shortTitle: "පොල්බෑ මූණා · Chief Disciple of Mahadenamutta (Male)",
     bio: "Named “Half-Coconut Face,” he is the most earnest and literal-minded of Mahadenamutta’s five disciples, reverently carrying out his master’s absurd instructions to the letter.",
     dramaticNote:
       "Implores Mahadenamutta to open the sacred palm-leaf manuscript to rescue the goat trapped in the clay pot.",
-    portraitObjectPosition: "68% 30%",
-    portraitScale: 1.75,
+    portraitImageUrl: "/src/assets/images/sinhala_mahadenamutta_plate_1794083182720.jpg",
+    portraitObjectPosition: "18% 42%",
+    portraitScale: 2.3,
     aliases: ["පොල්බෑ මූණා", "Polbää Muna"],
   },
+  kandy_narrator: {
+    shortTitle: "රාජසභා කථකාවිය · Chronicler of the Kandyan Court (Female)",
+    bio: "The court chronicler of Senkadagala (Kandy), narrating the battle of wits between the King and his irrepressible court jester Andare.",
+    dramaticNote:
+      "Describes the sunlit palace courtyard where royal white sugar has been spread on a woven mat to dry.",
+    portraitImageUrl: "/src/assets/images/sinhala_andare_plate_1794083184900.jpg",
+    portraitObjectPosition: "78% 48%",
+    portraitScale: 2.2,
+    aliases: ["කථකාවිය", "කථකයා", "Court Narrator"],
+  },
   andare: {
-    shortTitle: "අන්දරේ · Royal Court Jester of Kandy",
+    shortTitle: "අන්දරේ · Royal Court Jester of Kandy (Male)",
     bio: "The legendary 18th-century Sinhala poet and court wit from southern Sri Lanka who served in the Kandyan King’s Kavikara Maduwa. Famous for his quick-thinking pranks, improvised verses, and fearless humour before the throne.",
     dramaticNote:
       "Turns the King’s claim that the drying palace sugar is “white courtyard sand” into an excuse for him and his son to feast upon it with both hands.",
-    portraitObjectPosition: "32% 30%",
-    portraitScale: 1.75,
+    portraitImageUrl: "/src/assets/images/sinhala_characters_sheet_1794083189464.jpg",
+    portraitObjectPosition: "37% 22%",
+    portraitScale: 2.5,
     aliases: ["අන්දරේ", "Andare"],
   },
+  king_of_kandy: {
+    shortTitle: "මහ රජතුමා · The King of Kandy (Male)",
+    bio: "The monarch of the Kandyan Kingdom, adorned in royal Mul Anduma regalia. Though he tries to outwit Andare with clever riddles, he always appreciates the jester’s sharp intellect.",
+    dramaticNote:
+      "Tells Andare that the white sugar drying in the palace courtyard is merely white sand, only to be outsmarted minutes later.",
+    portraitImageUrl: "/src/assets/images/sinhala_andare_plate_1794083184900.jpg",
+    portraitObjectPosition: "22% 26%",
+    portraitScale: 2.3,
+    aliases: ["රජතුමා", "මහ රජතුමා", "King"],
+  },
+  queen_of_kandy: {
+    shortTitle: "රජ බිසව · The Queen of Kandy (Female)",
+    bio: "Consort of the Kandyan monarch, watching the courtyard wit from the carved wooden balcony of the Maha Wasala palace.",
+    dramaticNote:
+      "Laughs in delight from the palace balcony as Andare outwits the King’s white-sand ruse.",
+    portraitImageUrl: "/src/assets/images/sinhala_andare_plate_1794083184900.jpg",
+    portraitObjectPosition: "52% 28%",
+    portraitScale: 2.2,
+    aliases: ["රජ බිසව", "බිසව", "Queen"],
+  },
   upali_narrator: {
-    shortTitle: "උපාලි ගිනිවැල්ල · Hero of Martin Wickramasinghe’s Madol Doova",
+    shortTitle: "උපාලි ගිනිවැල්ල · Hero of Martin Wickramasinghe’s Madol Doova (Male)",
     bio: "The spirited, independent-minded young protagonist from a southern coastal village in Sri Lanka who rebels against stuffy schoolroom routine and sets out across Koggala lagoon to build a self-reliant life on the uninhabited island of Madol Doova.",
     dramaticNote:
       "Steers the outrigger canoe across the tranquil Koggala waters toward the mangrove-fringed island.",
-    portraitObjectPosition: "32% 30%",
-    portraitScale: 1.75,
+    portraitImageUrl: "/src/assets/images/sinhala_characters_sheet_1794083189464.jpg",
+    portraitObjectPosition: "62% 22%",
+    portraitScale: 2.5,
     aliases: ["උපාලි", "Upali"],
   },
+  sudu_nanda: {
+    shortTitle: "සුදු නැන්දා · Upali’s Stepmother (Female)",
+    bio: "Upali Ginivella’s gentle, anxious stepmother in the southern coastal village, forever worried by Upali and Jinapala’s daring escapades across the Koggala waters.",
+    dramaticNote:
+      "Wonders aloud where Upali and Jinapala have vanished as they slip away toward the mangrove island.",
+    portraitImageUrl: "/src/assets/images/sinhala_madol_doova_plate_1794083187744.jpg",
+    portraitObjectPosition: "32% 46%",
+    portraitScale: 2.2,
+    aliases: ["සුදු නැන්දා", "Sudu Nanda"],
+  },
   jinapala: {
-    shortTitle: "ජිනපාල · Loyal Companion on Madol Doova",
+    shortTitle: "ජිනපාල · Loyal Companion on Madol Doova (Male)",
     bio: "Upali Ginivella’s steadfast childhood friend and partner in adventure. Practical, courageous, and resourceful, he helps transform the wild mangrove island of Madol Doova into a thriving homestead.",
     dramaticNote:
       "Dismisses the villagers’ superstitions about island ghosts and celebrates Madol Doova as their new sanctuary.",
-    portraitObjectPosition: "68% 30%",
-    portraitScale: 1.75,
+    portraitImageUrl: "/src/assets/images/sinhala_madol_doova_plate_1794083187744.jpg",
+    portraitObjectPosition: "77% 56%",
+    portraitScale: 2.6,
     aliases: ["ජිනපාල", "Jinapala"],
   },
+  jataka_narrator: {
+    shortTitle: "කාව්‍ය කථකාවිය · Classical Jataka Reciter (Female)",
+    bio: "Reciter of Venerable Wättäwe Thero’s 15th-century Sinhala poem Guttila Kavya, evoking the cadence of classical Buddhist verse.",
+    dramaticNote:
+      "Sets the scene beneath the royal pavilion of Udeni as the great musical contest begins.",
+    portraitImageUrl: "/src/assets/images/sinhala_guttila_plate_1794083189305.jpg",
+    portraitObjectPosition: "50% 28%",
+    portraitScale: 1.7,
+    aliases: ["කාව්‍ය කථකාවිය", "කාව්‍ය කථකයා", "Poetic Narrator"],
+  },
   master_guttila: {
-    shortTitle: "ගුත්තිල ඇදුරිඳු · Bodhisattva Master of the Seven-Stringed Veena",
+    shortTitle: "ගුත්තිල ඇදුරිඳු · Bodhisattva Master of the Seven-Stringed Veena (Male)",
     bio: "The supreme court musician of Udeni and hero of Wättäwe Thero’s 15th-century classical Sinhala poem Guttila Kavya. Renowned for his generosity, filial piety, and transcendent mastery of the seven-stringed veena.",
     dramaticNote:
       "Snaps the strings of his veena one by one during the royal contest, drawing forth celestial music from the bare instrument through pure spiritual grace.",
-    portraitObjectPosition: "32% 30%",
-    portraitScale: 1.75,
+    portraitImageUrl: "/src/assets/images/sinhala_characters_sheet_1794083189464.jpg",
+    portraitObjectPosition: "85% 22%",
+    portraitScale: 2.5,
     aliases: ["ගුත්තිල", "Guttila"],
+  },
+  musila: {
+    shortTitle: "මූසිල · Ambitious Veena Pupil from Ujjeni (Male)",
+    bio: "A gifted but proud musician who learned every secret of the seven-stringed veena from Master Guttila, then challenged his aged teacher for equal royal honours.",
+    dramaticNote:
+      "Watches in astonishment as Master Guttila plays heavenly music even after snapping every string of his veena.",
+    portraitImageUrl: "/src/assets/images/sinhala_guttila_plate_1794083189305.jpg",
+    portraitObjectPosition: "76% 46%",
+    portraitScale: 2.4,
+    aliases: ["මූසිල", "Musila"],
   },
 };
 
@@ -319,13 +419,15 @@ export function getFolioCharacterCast(
     const appearsByDialogue = turnsInFolio > 0;
 
     // Determine portrait image URL and focal position
-    let portraitImageUrl = charSheetUrl;
+    let portraitImageUrl = curated?.portraitImageUrl || charSheetUrl;
     if (
+      !curated?.portraitImageUrl &&
       typeof curated?.useScenePlateIdx === "number" &&
       scenePlates[curated.useScenePlateIdx]?.imageUrl
     ) {
       portraitImageUrl = scenePlates[curated.useScenePlateIdx].imageUrl!;
     } else if (
+      !curated?.portraitImageUrl &&
       char.role.toLowerCase().includes("narrat") &&
       scenePlates[1]?.imageUrl
     ) {
@@ -367,11 +469,19 @@ export function getFolioCharacterCast(
             storybook.settingFooterRight || "Opening Chapter"
           }).`);
 
+    const voiceProfile = resolveVoiceProfile(
+      char.voiceName,
+      char.voiceGender,
+      char.name
+    );
+
     return {
       id: char.id,
       name: char.name,
       role: char.role,
-      voiceName: char.voiceName,
+      voiceName: voiceProfile.voiceName,
+      voiceGender: voiceProfile.gender,
+      voiceRegisterLabel: voiceProfile.registerLabel,
       voiceStyle: char.voiceStyle,
       shortTitle,
       bio,

@@ -15,6 +15,7 @@ export interface CharacterVoice {
   role: string;
   description: string;
   voiceName: "Charon" | "Kore" | "Puck" | "Fenrir" | "Aoede" | "Zephyr" | "Leda" | "Orus" | "Iapetus" | string;
+  voiceGender?: "male" | "female";
   voiceStyle: string;
 }
 
@@ -24,6 +25,7 @@ export interface DialogueLine {
   voiceRoleLabel?: string; // e.g. "Character Dialogue" or "Literary Narration"
   isDialogue?: boolean;    // true for spoken character lines, false for narrator prose
   voiceName: string;
+  voiceGender?: "male" | "female";
   voiceStyle?: string;
   stylePrompt?: string;
   text: string;

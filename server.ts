@@ -82,6 +82,151 @@ async function startServer() {
     }
   });
 
+  // Reliable server-side TTS endpoint for Sinhala (si-LK) and custom storybook turns
+  app.post("/api/tts-turn", async (req, res): Promise<any> => {
+    try {
+      const rawText = String(req.body?.text || "").trim();
+      const lang = String(req.body?.lang || "si").trim();
+      const voiceName = String(req.body?.voiceName || "Kore").trim();
+
+      if (!rawText) {
+        return res.status(400).json({ error: "Missing text for TTS" });
+      }
+
+      const hasSinhala = /[\u0D80-\u0DFF]/.test(rawText);
+      const targetTl = hasSinhala || lang.toLowerCase().startsWith("si") ? "si" : "en";
+
+      // When a turn contains Sinhala script, strip any parenthetical English or Latin words
+      // so that ONLY Sinhala sentences are spoken aloud
+      const cleanedText = hasSinhala
+        ? rawText
+            .replace(/\([^)]*[A-Za-z][^)]*\)/g, " ")
+            .replace(/[A-Za-z]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim() || rawText
+        : rawText;
+
+      // Split text into <= 180 character phrase chunks for fast, reliable native Sinhala MP3 synthesis
+      const splitIntoChunks = (str: string, maxLen = 175): string[] => {
+        const sentences = str
+          .replace(/[“”"]/g, "")
+          .split(/(?<=[.!?।,;])\s+/u)
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        const chunks: string[] = [];
+        let current = "";
+        for (const sent of sentences) {
+          if (!current) {
+            if (sent.length <= maxLen) {
+              current = sent;
+            } else {
+              const words = sent.split(/\s+/);
+              let wCur = "";
+              for (const w of words) {
+                if ((wCur + " " + w).trim().length <= maxLen) {
+                  wCur = (wCur + " " + w).trim();
+                } else {
+                  if (wCur) chunks.push(wCur);
+                  wCur = w;
+                }
+              }
+              current = wCur;
+            }
+          } else if ((current + " " + sent).length <= maxLen) {
+            current = current + " " + sent;
+          } else {
+            chunks.push(current);
+            current = sent;
+          }
+        }
+        if (current) chunks.push(current);
+        return chunks.length > 0 ? chunks : [str.slice(0, maxLen)];
+      };
+
+      // Primary path for Sinhala: native Sinhala ('si') TTS stream (instant, zero-latency MP3 that works in all browsers)
+      try {
+        const chunks = splitIntoChunks(cleanedText);
+        const buffers: Buffer[] = [];
+        for (const chunk of chunks) {
+          const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(
+            targetTl
+          )}&client=tw-ob&q=${encodeURIComponent(chunk)}`;
+          const r = await fetch(ttsUrl, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              Referer: "https://translate.google.com/",
+            },
+          });
+          if (r.ok) {
+            const arr = await r.arrayBuffer();
+            if (arr.byteLength > 100) {
+              buffers.push(Buffer.from(arr));
+            }
+          }
+        }
+        if (buffers.length > 0) {
+          const combined = Buffer.concat(buffers);
+          return res.json({
+            audioDataUrl: `data:audio/mpeg;base64,${combined.toString("base64")}`,
+            lang: targetTl,
+            provider: "native-sinhala-tts",
+          });
+        }
+      } catch (ttsErr) {
+        console.warn("[Backend] Native stream TTS fallback notice:", ttsErr);
+      }
+
+      // Secondary path: Gemini 3.8 Flash Lite TTS via @google/genai
+      const apiKey = resolveServerApiKey();
+      if (apiKey) {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build",
+            },
+          },
+        });
+        const response = await ai.models.generateContent({
+          model: "gemini-3.8-flash-lite-tts",
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: cleanedText }],
+            },
+          ],
+          config: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName },
+              },
+            },
+          },
+        });
+        const base64Audio =
+          response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        const mimeType =
+          response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType ||
+          "audio/wav";
+        if (base64Audio) {
+          return res.json({
+            audioDataUrl: `data:${mimeType};base64,${base64Audio}`,
+            lang: targetTl,
+            provider: "gemini-3.8-flash-lite-tts",
+          });
+        }
+      }
+
+      return res.status(503).json({ error: "TTS synthesis unavailable" });
+    } catch (err: any) {
+      console.error("[Backend] /api/tts-turn error:", err);
+      return res.status(500).json({ error: err?.message || "TTS failed" });
+    }
+  });
+
   // Health & Agent Config introspection endpoint
   app.get("/api/agent-config", (_req, res) => {
     const agentDir = path.join(process.cwd(), "agent");

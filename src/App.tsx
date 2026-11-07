@@ -29,13 +29,18 @@ import {
 } from "./services/ambientSoundService";
 import { getFolioCharacterCast } from "./services/characterCastService";
 import {
+  resolveVoiceProfile,
+  shapeAudioForCharacterVoice,
+} from "./services/characterVoiceEngine";
+import {
   MarginaliaNote,
   READING_LIGHTING_MODES,
   ReadingLightingMode,
   resolveLightingPalette,
   segmentTextWithMarginalia,
 } from "./services/marginaliaService";
-import { AgentLogEntry, Storybook, StorybookPalette } from "./types";
+import { DailyReadingGoalTracker } from "./components/DailyReadingGoalTracker";
+import { AgentLogEntry, DialogueLine, Storybook, StorybookPalette } from "./types";
 
 interface VisitedFolioCrumb {
   id: string;
@@ -275,21 +280,40 @@ export default function App() {
   const [selectedCastCharacterId, setSelectedCastCharacterId] = useState<string | null>(null);
   const [readerBodyFont, setReaderBodyFont] = useState<ReaderBodyFont>("classic-garamond");
 
-  // 6 New Reader Enhancements State:
-  // 1. Playback Speed & Audio Mixer
-  const [showMixerPanel, setShowMixerPanel] = useState<boolean>(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
-  const [voiceVolume, setVoiceVolume] = useState<number>(1.0);
-  const [musicVolume, setMusicVolume] = useState<number>(0.18);
-  const [ambientVolume, setAmbientVolume] = useState<number>(0.75);
+  // Daily Reading Goal Tracker State (persisted per calendar day)
+  const todayDateKey = new Date().toISOString().slice(0, 10);
+  const [dailyGoalTarget, setDailyGoalTarget] = useState<number>(() => {
+    if (typeof window === "undefined") return 3;
+    const saved = Number(
+      window.localStorage.getItem("folio_press_daily_goal_target") || "3"
+    );
+    return Number.isFinite(saved) && saved >= 1 && saved <= 12 ? saved : 3;
+  });
+  const [foliosReadToday, setFoliosReadToday] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(
+        `folio_press_folios_read_${todayDateKey}`
+      );
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
 
-  // 2. Interactive Marginalia & Period Glossary
+  // Reader Enhancements State:
+  const [playbackSpeed] = useState<number>(1.0);
+  const [voiceVolume] = useState<number>(1.0);
+  const [musicVolume] = useState<number>(0.18);
+  const [ambientVolume] = useState<number>(0.75);
+
+  // Interactive Marginalia & Period Glossary
   const [activeMarginalia, setActiveMarginalia] = useState<{
     turnIdx: number;
     note: MarginaliaNote;
   } | null>(null);
 
-  // 3. Commonplace Book (Bookmarks & Favorite Quotes)
+  // Commonplace Book (Bookmarks & Favorite Quotes)
   const [savedQuotes, setSavedQuotes] = useState<SavedCommonplaceQuote[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -301,10 +325,10 @@ export default function App() {
   });
   const [showCommonplaceModal, setShowCommonplaceModal] = useState<boolean>(false);
 
-  // 4. Candlelight / Evening Sepia / Midnight Reading Mode
+  // Candlelight / Evening Sepia / Midnight Reading Mode
   const [lightingMode, setLightingMode] = useState<ReadingLightingMode>("daylight");
 
-  // 5. Full-Screen Plate Lightbox & Zoom Loupe
+  // Full-Screen Plate Lightbox & Zoom Loupe
   const [showPlateLightbox, setShowPlateLightbox] = useState<boolean>(false);
   const [lightboxZoom, setLightboxZoom] = useState<number>(1);
 
@@ -345,6 +369,8 @@ export default function App() {
   const activeLineIdxRef = useRef<number>(-1);
   const showOpeningTitleCardRef = useRef<boolean>(false);
   const lastSpokenTurnKeyRef = useRef<string>("");
+  const ttsTurnAudioCacheRef = useRef<Map<string, string>>(new Map());
+  const isTurnAudioPlayingRef = useRef<boolean>(false);
 
   const playbackSpeedRef = useRef<number>(1.0);
   const voiceVolumeRef = useRef<number>(1.0);
@@ -489,7 +515,101 @@ export default function App() {
     setActiveMarginalia(null);
   }, [currentPageIdx, storybook.id]);
 
-  // Track folios read in the current session as a breadcrumb trail
+  // Persist Daily Reading Goal target and today's read folios
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        "folio_press_daily_goal_target",
+        String(dailyGoalTarget)
+      );
+    } catch {}
+  }, [dailyGoalTarget]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        `folio_press_folios_read_${todayDateKey}`,
+        JSON.stringify(foliosReadToday)
+      );
+    } catch {}
+  }, [foliosReadToday, todayDateKey]);
+
+  // Extract spoken text for a dialogue turn; if Sinhala script is present, strip any English/Latin words so only Sinhala sentences speak
+  const extractSpokenText = (line: DialogueLine): string => {
+    const raw = (line.ttsText || line.text.replace(/[“”"]/g, "")).trim();
+    if (!raw) return "";
+    if (/[\u0D80-\u0DFF]/.test(raw)) {
+      const sinhalaOnly = raw
+        .replace(/\([^)]*[A-Za-z][^)]*\)/g, " ")
+        .replace(/[A-Za-z]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return sinhalaOnly || raw;
+    }
+    return raw;
+  };
+
+  // Pre-fetch turn-by-turn TTS audio for books without a single masterAudioUrl (e.g., Sri Lankan Sinhala stories)
+  // and shape each turn with its character's distinct Male or Female vocal profile
+  const fetchAndCacheTurnTts = async (
+    bookId: string,
+    pageIdx: number,
+    turnIdx: number,
+    line: DialogueLine
+  ): Promise<string | null> => {
+    const voiceProfile = resolveVoiceProfile(
+      line.voiceName,
+      line.voiceGender,
+      line.speaker || line.speakerLabel
+    );
+    const turnKey = `${bookId}_${pageIdx}_${turnIdx}_${voiceProfile.voiceName}_${voiceProfile.gender}`;
+    if (line.audioDataUrl) return line.audioDataUrl;
+    const cached = ttsTurnAudioCacheRef.current.get(turnKey);
+    if (cached) return cached;
+
+    const spokenText = extractSpokenText(line);
+    if (!spokenText) return null;
+
+    const hasSinhala = /[\u0D80-\u0DFF]/.test(spokenText);
+    try {
+      const resp = await fetch("/api/tts-turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: spokenText,
+          lang: hasSinhala ? "si" : "en",
+          voiceName: voiceProfile.voiceName,
+          voiceGender: voiceProfile.gender,
+        }),
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      if (data?.audioDataUrl) {
+        const shapedAudioUrl = await shapeAudioForCharacterVoice(
+          data.audioDataUrl as string,
+          voiceProfile,
+          data.provider
+        );
+        ttsTurnAudioCacheRef.current.set(turnKey, shapedAudioUrl);
+        return shapedAudioUrl;
+      }
+    } catch {}
+    return null;
+  };
+
+  // Preload active folio's turn TTS in background whenever a book without masterAudioUrl is opened
+  useEffect(() => {
+    if (storybook.masterAudioUrl) return;
+    const page = storybook.pages[currentPageIdx] || storybook.pages[0];
+    const lines = page?.dialogueLines || [];
+    lines.forEach((line, tIdx) => {
+      fetchAndCacheTurnTts(storybook.id, currentPageIdx, tIdx, line);
+    });
+  }, [storybook, currentPageIdx]);
+
+  // Track folios read in the current session as a breadcrumb trail AND toward Daily Reading Goal
   useEffect(() => {
     if (viewMode !== "reader") return;
     const page = storybook.pages[currentPageIdx] || storybook.pages[0];
@@ -498,6 +618,10 @@ export default function App() {
     const folioCode = `${roman}.${currentPageIdx + 1}`;
     const crumbId = `${storybook.id}:${currentPageIdx}`;
     const caption = page.imageCaption || page.chapterTitle || storybook.title;
+
+    setFoliosReadToday((prev) =>
+      prev.includes(crumbId) ? prev : [...prev, crumbId]
+    );
 
     setFolioHistory((prev) => {
       if (prev.length > 0 && prev[prev.length - 1].id === crumbId) {
@@ -690,8 +814,32 @@ export default function App() {
         tSec = masterEl.currentTime;
         virtualClockRef.current = tSec;
       } else {
-        tSec = virtualClockRef.current + dtSec * playbackSpeedRef.current;
-        virtualClockRef.current = tSec;
+        // When a per-turn TTS audio clip (such as Sinhala TTS) is actively playing in masterEl,
+        // pace the virtual clock so it never cuts off the spoken sentence early
+        const curPages = storybook.pages || [];
+        const curLines = curPages[currentPageIdxRef.current]?.dialogueLines || [];
+        const curLine =
+          activeLineIdxRef.current >= 0 &&
+          activeLineIdxRef.current < curLines.length
+            ? curLines[activeLineIdxRef.current]
+            : null;
+        const turnEndSec = curLine?.endSec ?? 99999;
+
+        if (
+          !storybook.masterAudioUrl &&
+          isTurnAudioPlayingRef.current &&
+          masterEl &&
+          !masterEl.paused &&
+          !masterEl.ended
+        ) {
+          const nextClock = virtualClockRef.current + dtSec * playbackSpeedRef.current;
+          // Hold slightly before turnEndSec while the voice is still speaking
+          tSec = Math.min(nextClock, Math.max(virtualClockRef.current, turnEndSec - 0.15));
+          virtualClockRef.current = tSec;
+        } else {
+          tSec = virtualClockRef.current + dtSec * playbackSpeedRef.current;
+          virtualClockRef.current = tSec;
+        }
       }
 
       setPlaybackTimeSec(tSec);
@@ -738,13 +886,9 @@ export default function App() {
         setManualPlateIdx(null);
 
         if (prevSceneIdx === nextSceneIdx) {
-          // Same visual scene (e.g., Pride & Prejudice Folios I.1 -> I.2 -> I.3):
-          // Crossfade ONLY the right-hand text page while the left-hand 3D Pop-Up Diorama stays steady
           setIsRightFolioFading(true);
           setTimeout(() => setIsRightFolioFading(false), 450);
         } else {
-          // New visual scene (e.g., Alice Scene I -> Scene II):
-          // Full spine-hinged page turn + 3D Pop-Up Diorama unfold
           setIsPageTurning(true);
           setIsDioramaUnfolding(true);
           setTimeout(() => setIsPageTurning(false), 650);
@@ -753,7 +897,6 @@ export default function App() {
       }
 
       // 3. Determine active turn index `targetLineIdx` within `pages[targetPageIdx]`
-      //    (-1 = pre-speech future_ink, 0..N-1 = active turn ink_rgb, 999 = post-speech past_ink)
       const fLines = pages[targetPageIdx]?.dialogueLines || [];
       let targetLineIdx = -1;
 
@@ -781,7 +924,7 @@ export default function App() {
         activeLineIdxRef.current = targetLineIdx;
         setActiveLineIdx(targetLineIdx);
 
-        // If this is a custom commissioned book or Sinhala storybook without a single masterAudioUrl, speak the active turn
+        // Speak the active turn for Sinhala storybooks and custom commissioned books
         if (
           !storybook.masterAudioUrl &&
           targetLineIdx >= 0 &&
@@ -791,36 +934,70 @@ export default function App() {
           if (lastSpokenTurnKeyRef.current !== turnKey) {
             lastSpokenTurnKeyRef.current = turnKey;
             const line = fLines[targetLineIdx];
-            if (line.audioDataUrl && masterEl) {
-              masterEl.src = line.audioDataUrl;
-              masterEl.volume = Math.max(0, Math.min(1, voiceVolumeRef.current));
-              masterEl.playbackRate = playbackSpeedRef.current;
-              masterEl.play().catch(() => {});
-            } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
-              try {
-                window.speechSynthesis.cancel();
-                const spokenText = (
-                  line.ttsText || line.text.replace(/[“”"]/g, "")
-                ).trim();
-                const utter = new SpeechSynthesisUtterance(spokenText);
-                const hasSinhala = /[\u0D80-\u0DFF]/.test(spokenText);
-                const voices = window.speechSynthesis.getVoices?.() || [];
-                if (hasSinhala) {
-                  utter.lang = "si-LK";
-                  const siVoice = voices.find((v) =>
-                    v.lang?.toLowerCase().startsWith("si")
-                  );
-                  if (siVoice) {
-                    utter.voice = siVoice;
-                  }
-                } else {
-                  utter.lang = "en-GB";
-                }
-                utter.rate = Math.max(0.6, Math.min(1.6, 0.96 * playbackSpeedRef.current));
-                utter.volume = Math.max(0, Math.min(1, voiceVolumeRef.current));
-                window.speechSynthesis.speak(utter);
-              } catch {}
+
+            // Pre-fetch next turn in background
+            if (targetLineIdx + 1 < fLines.length) {
+              fetchAndCacheTurnTts(
+                storybook.id,
+                targetPageIdx,
+                targetLineIdx + 1,
+                fLines[targetLineIdx + 1]
+              );
             }
+
+            isTurnAudioPlayingRef.current = true;
+            fetchAndCacheTurnTts(
+              storybook.id,
+              targetPageIdx,
+              targetLineIdx,
+              line
+            ).then((audioUrl) => {
+              if (lastSpokenTurnKeyRef.current !== turnKey) return;
+              if (audioUrl && masterEl) {
+                if (typeof window !== "undefined" && "speechSynthesis" in window) {
+                  window.speechSynthesis.cancel();
+                }
+                masterEl.src = audioUrl;
+                masterEl.setAttribute("data-book-src", turnKey);
+                masterEl.volume = Math.max(0, Math.min(1, voiceVolumeRef.current));
+                masterEl.playbackRate = playbackSpeedRef.current;
+                masterEl.onended = () => {
+                  if (lastSpokenTurnKeyRef.current === turnKey) {
+                    isTurnAudioPlayingRef.current = false;
+                  }
+                };
+                masterEl.onerror = () => {
+                  isTurnAudioPlayingRef.current = false;
+                };
+                masterEl.play().catch(() => {
+                  isTurnAudioPlayingRef.current = false;
+                });
+              } else {
+                isTurnAudioPlayingRef.current = false;
+                if (typeof window !== "undefined" && "speechSynthesis" in window) {
+                  try {
+                    window.speechSynthesis.cancel();
+                    const spokenText = extractSpokenText(line);
+                    const fallbackProfile = resolveVoiceProfile(
+                      line.voiceName,
+                      line.voiceGender,
+                      line.speaker || line.speakerLabel
+                    );
+                    const utter = new SpeechSynthesisUtterance(spokenText);
+                    utter.lang = /[\u0D80-\u0DFF]/.test(spokenText)
+                      ? "si-LK"
+                      : "en-GB";
+                    utter.pitch = fallbackProfile.gender === "male" ? 0.72 : 1.12;
+                    utter.rate = Math.max(
+                      0.6,
+                      Math.min(1.6, 0.96 * playbackSpeedRef.current)
+                    );
+                    utter.volume = Math.max(0, Math.min(1, voiceVolumeRef.current));
+                    window.speechSynthesis.speak(utter);
+                  } catch {}
+                }
+              }
+            });
           }
         }
       }
@@ -1396,7 +1573,6 @@ export default function App() {
           showAgentSpecModal ||
           showCommonplaceModal ||
           showPlateLightbox ||
-          showMixerPanel ||
           activeMarginalia ||
           selectedCastCharacterId
         ) {
@@ -1406,7 +1582,6 @@ export default function App() {
           setShowAgentSpecModal(false);
           setShowCommonplaceModal(false);
           setShowPlateLightbox(false);
-          setShowMixerPanel(false);
           setActiveMarginalia(null);
           setSelectedCastCharacterId(null);
         }
@@ -1675,7 +1850,7 @@ export default function App() {
                   <div
                     className="folio-contents-list"
                     style={{
-                      maxHeight: "34vh",
+                      maxHeight: "26vh",
                       overflowY: "auto",
                       paddingRight: "4px",
                     }}
@@ -1754,6 +1929,22 @@ export default function App() {
                         );
                       })}
                   </div>
+
+                  {/* D3-Based Daily Reading Goal Arc Tracker */}
+                  <DailyReadingGoalTracker
+                    foliosReadToday={foliosReadToday}
+                    dailyGoalTarget={dailyGoalTarget}
+                    onChangeGoalTarget={(nextTarget) =>
+                      setDailyGoalTarget(nextTarget)
+                    }
+                    onLogBonusFolio={() =>
+                      setFoliosReadToday((prev) => [
+                        ...prev,
+                        `manual_${Date.now()}`,
+                      ])
+                    }
+                    onResetToday={() => setFoliosReadToday([])}
+                  />
                 </div>
               </div>
 
@@ -2330,7 +2521,7 @@ export default function App() {
                     }}
                   >
                     {storybook.characters
-                      .map((c) => `${c.name} (${c.voiceName})`)
+                      .map((c) => c.name)
                       .join("   ·   ")}
                   </div>
                 </div>
@@ -2585,7 +2776,10 @@ export default function App() {
 
                         {showRubric && (
                           <div className="austen-turn-rubric">
-                            {line.speakerLabel || line.speaker.toUpperCase()}
+                            {(line.speakerLabel || line.speaker.toUpperCase()).replace(
+                              /\s*\([♂♀]\s*(MALE|FEMALE)\)/gi,
+                              ""
+                            )}
                           </div>
                         )}
                         <p className="austen-turn-text">
@@ -2823,28 +3017,6 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowMixerPanel((prev) => !prev)}
-                title="Open Playback Speed & Audio Mixer (Voice, Music, Ambient)"
-                className={`austen-margin-link ${
-                  showMixerPanel || playbackSpeed !== 1.0 ? "is-active" : ""
-                }`}
-              >
-                <span>Mixer ({playbackSpeed}&times;)</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleToggleAmbientSound}
-                title={`Ambient Sound (A): ${activeAmbientProfile.label} — ${activeAmbientProfile.description}`}
-                className={`austen-margin-link ${
-                  isAmbientSoundEnabled ? "is-active" : ""
-                }`}
-              >
-                {isAmbientSoundEnabled
-                  ? `Ambient (${activeAmbientProfile.shortTag})`
-                  : "Ambient"}
-              </button>
-              <button
-                type="button"
                 onClick={handleCyclePlate}
                 title="Cycle Illustration Plate (P)"
                 className="austen-margin-link"
@@ -2877,17 +3049,6 @@ export default function App() {
               >
                 <span>Saved ({savedQuotes.length})</span>
               </button>
-              {ALL_SINHALA_STORYBOOKS.some((s) => s.id === storybook.id) && (
-                <button
-                  type="button"
-                  onClick={handleSynthesizeFolioWav}
-                  disabled={isSynthesizingAudio}
-                  title="Synthesize 24 kHz Gemini Flash TTS Audio for this Sinhala Folio"
-                  className="austen-margin-link"
-                >
-                  <span>{isSynthesizingAudio ? "Sinhala TTS…" : "24kHz TTS"}</span>
-                </button>
-              )}
               <button
                 type="button"
                 onClick={handleDownloadFolio}
@@ -2938,35 +3099,6 @@ export default function App() {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              {folioHistory.length > 0 && (
-                <nav
-                  aria-label="Session folio reading history"
-                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-                >
-                  <span>History:</span>
-                  {folioHistory.map((crumb, idx) => {
-                    const isCurrent =
-                      idx === folioHistory.length - 1 &&
-                      crumb.bookId === storybook.id &&
-                      crumb.pageIdx === currentPageIdx;
-                    return (
-                      <React.Fragment key={`${crumb.id}_${idx}`}>
-                        {idx > 0 && <span aria-hidden="true">&rsaquo;</span>}
-                        <button
-                          type="button"
-                          onClick={() => handleJumpToBreadcrumb(crumb, idx)}
-                          title={`${crumb.bookTitle} · Folio ${crumb.folioCode} — ${crumb.caption}`}
-                          className={`austen-margin-link ${
-                            isCurrent ? "is-active" : ""
-                          }`}
-                        >
-                          {crumb.folioCode}
-                        </button>
-                      </React.Fragment>
-                    );
-                  })}
-                </nav>
-              )}
               <button
                 type="button"
                 onClick={() =>
@@ -3048,136 +3180,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Expandable Playback Speed & 3-Channel Audio Mixer Strip */}
-          {showMixerPanel && (
-            <div
-              className="austen-mixer-panel"
-              role="region"
-              aria-label="Playback Speed and Audio Mixer"
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: "16px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-cinzel)",
-                      fontSize: "11px",
-                      letterSpacing: "0.11em",
-                      color: "var(--folio-accent)",
-                    }}
-                  >
-                    CADENCE (SPEED):
-                  </span>
-                  {PLAYBACK_SPEED_OPTIONS.map((spd) => (
-                    <button
-                      key={spd}
-                      type="button"
-                      onClick={() => setPlaybackSpeed(spd)}
-                      className={`austen-margin-link ${
-                        playbackSpeed === spd ? "is-active" : ""
-                      }`}
-                    >
-                      {spd}&times;
-                    </button>
-                  ))}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "18px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      fontFamily: "var(--font-cinzel)",
-                      fontSize: "11px",
-                      color: "var(--folio-ink)",
-                    }}
-                  >
-                    <span>VOICE ({Math.round(voiceVolume * 100)}%)</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={voiceVolume}
-                      onChange={(e) => setVoiceVolume(parseFloat(e.target.value))}
-                    />
-                  </label>
-
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      fontFamily: "var(--font-cinzel)",
-                      fontSize: "11px",
-                      color: "var(--folio-ink)",
-                    }}
-                  >
-                    <span>SCORE ({Math.round(musicVolume * 100)}%)</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={musicVolume}
-                      onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                    />
-                  </label>
-
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      fontFamily: "var(--font-cinzel)",
-                      fontSize: "11px",
-                      color: "var(--folio-ink)",
-                    }}
-                  >
-                    <span>AMBIENT ({Math.round(ambientVolume * 100)}%)</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={ambientVolume}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setAmbientVolume(val);
-                        if (!isAmbientSoundEnabled && val > 0) {
-                          setIsAmbientSoundEnabled(true);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowMixerPanel(false)}
-                  className="austen-margin-link"
-                >
-                  Close &times;
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Scrollable Character Cast Strip (below Reader margin bar) */}
           {folioCast.length > 0 && (
             <div
@@ -3219,7 +3221,7 @@ export default function App() {
                         )
                       }
                       aria-expanded={isSelected}
-                      title={`View character bio for ${member.name} (${member.voiceName})`}
+                      title={`View character bio for ${member.name}`}
                       className={`austen-cast-item ${
                         isSelected ? "is-selected" : ""
                       } ${isSpeakingNow ? "is-speaking" : ""}`}
@@ -3241,12 +3243,12 @@ export default function App() {
                         <span className="austen-cast-name">{member.name}</span>
                         <span className="austen-cast-sub">
                           {isSpeakingNow
-                            ? `Speaking now · ${member.voiceName}`
+                            ? "Speaking now"
                             : member.turnsInFolio > 0
-                            ? `${member.voiceName} · ${member.turnsInFolio} ${
+                            ? `${member.turnsInFolio} ${
                                 member.turnsInFolio === 1 ? "turn" : "turns"
                               }`
-                            : `${member.voiceName} · In scene`}
+                            : "In scene"}
                         </span>
                       </div>
                     </button>
@@ -3288,9 +3290,7 @@ export default function App() {
                       marginBottom: "2px",
                     }}
                   >
-                    DRAMATIS PERSONA &nbsp;·&nbsp; VOICE:{" "}
-                    {selectedCastMember.voiceName} &mdash;{" "}
-                    {selectedCastMember.voiceStyle}
+                    DRAMATIS PERSONA &nbsp;·&nbsp; {selectedCastMember.role}
                   </div>
 
                   <div
@@ -3565,7 +3565,7 @@ export default function App() {
                 }}
               >
                 {storybook.characters
-                  .map((c) => `${c.name} (${c.voiceName})`)
+                  .map((c) => c.name)
                   .join("   ·   ")}
               </div>
             </div>

@@ -149,85 +149,24 @@ export const SINHALA_STORY_CATEGORIES: SinhalaStoryCategory[] = [
   },
 ];
 
-const MAHADENAMUTTA_CHAR_SHEET = createArchivalPlateSvgDataUri({
-  bg: "#F7F1E3",
-  accent: "#9E3B24",
-  secondary: "#B87D28",
-  ink: "#231B14",
-  titleSi: "මහදැනමුත්තා සහ ගෝලයෝ",
-  titleEn: "Mahadenamutta & His Five Disciples — Kandyan Sittara Character Sheet",
-  motif: "charsheet",
-});
+const SINHALA_MASTER_CHAR_SHEET =
+  "/src/assets/images/sinhala_characters_sheet_1794083189464.jpg";
 
-const MAHADENAMUTTA_PLATE_1 = createArchivalPlateSvgDataUri({
-  bg: "#F7F1E3",
-  accent: "#9E3B24",
-  secondary: "#B87D28",
-  ink: "#231B14",
-  titleSi: "මහදැනමුත්තා සහ එළුවාගේ මුට්ටිය",
-  titleEn: "The Village Ambalama & The Goat with its Head in the Clay Pot",
-  motif: "mahadenamutta",
-});
+const MAHADENAMUTTA_CHAR_SHEET = SINHALA_MASTER_CHAR_SHEET;
+const MAHADENAMUTTA_PLATE_1 =
+  "/src/assets/images/sinhala_mahadenamutta_plate_1794083182720.jpg";
 
-const ANDARE_CHAR_SHEET = createArchivalPlateSvgDataUri({
-  bg: "#F7F1E3",
-  accent: "#9E3B24",
-  secondary: "#8C6239",
-  ink: "#231B14",
-  titleSi: "අන්දරේ සහ රාජසභාව",
-  titleEn: "Andare the Court Jester & His Young Son — Character Reference Sheet",
-  motif: "charsheet",
-});
+const ANDARE_CHAR_SHEET = SINHALA_MASTER_CHAR_SHEET;
+const ANDARE_PLATE_1 =
+  "/src/assets/images/sinhala_andare_plate_1794083184900.jpg";
 
-const ANDARE_PLATE_1 = createArchivalPlateSvgDataUri({
-  bg: "#F7F1E3",
-  accent: "#9E3B24",
-  secondary: "#8C6239",
-  ink: "#231B14",
-  titleSi: "රාජවාසලේ සීනි පැදුර",
-  titleEn: "The Royal Courtyard of Kandy — Drying the King's White Sugar",
-  motif: "andare",
-});
+const MADOL_DOOVA_CHAR_SHEET = SINHALA_MASTER_CHAR_SHEET;
+const MADOL_DOOVA_PLATE_1 =
+  "/src/assets/images/sinhala_madol_doova_plate_1794083187744.jpg";
 
-const MADOL_DOOVA_CHAR_SHEET = createArchivalPlateSvgDataUri({
-  bg: "#F4F3EB",
-  accent: "#2E6B5E",
-  secondary: "#6B8E78",
-  ink: "#1A211E",
-  titleSi: "මඩොල් දූව · උපාලි සහ ජිනපාල",
-  titleEn: "Upali Ginivella & Jinapala — Southern Coast Character Sheet",
-  motif: "charsheet",
-});
-
-const MADOL_DOOVA_PLATE_1 = createArchivalPlateSvgDataUri({
-  bg: "#F4F3EB",
-  accent: "#2E6B5E",
-  secondary: "#6B8E78",
-  ink: "#1A211E",
-  titleSi: "කොග්ගල කලපුව සහ මඩොල් දූව",
-  titleEn: "Crossing the Koggala Lagoon by Outrigger Canoe toward Madol Doova",
-  motif: "madoldoova",
-});
-
-const GUTTILA_CHAR_SHEET = createArchivalPlateSvgDataUri({
-  bg: "#F7F1E3",
-  accent: "#B37A1E",
-  secondary: "#9E3B24",
-  ink: "#231B14",
-  titleSi: "ගුත්තිල ඇදුරිඳු සහ මූසිල",
-  titleEn: "Master Musician Guttila & Pupil Musila — Classical Character Sheet",
-  motif: "charsheet",
-});
-
-const GUTTILA_PLATE_1 = createArchivalPlateSvgDataUri({
-  bg: "#F7F1E3",
-  accent: "#B37A1E",
-  secondary: "#9E3B24",
-  ink: "#231B14",
-  titleSi: "සත්තන්ත්‍රී වීණා වාදනය",
-  titleEn: "The Seven-Stringed Veena Recital in the Royal Pavilion",
-  motif: "guttila",
-});
+const GUTTILA_CHAR_SHEET = SINHALA_MASTER_CHAR_SHEET;
+const GUTTILA_PLATE_1 =
+  "/src/assets/images/sinhala_guttila_plate_1794083189305.jpg";
 
 const DEFAULT_SINHALA_MODELS = {
   orchestrator: "antigravity-preview-09-2026 (gemini-4-argon)",
@@ -265,11 +204,21 @@ export const MAHADENAMUTTA_STORYBOOK: Storybook = {
   characters: [
     {
       id: "sinhala_narrator",
-      name: "කථකයා (Narrator)",
+      name: "කථකාවිය (Narrator)",
       role: "Literary Narration",
-      description: "Warm bilingual Sinhala village storyteller",
+      description: "Warm Sinhala village storyteller",
       voiceName: "Kore",
-      voiceStyle: "warm, unhurried Sinhala & English village storytelling",
+      voiceGender: "female",
+      voiceStyle: "warm, unhurried female Sinhala village storytelling",
+    },
+    {
+      id: "village_housewife",
+      name: "ගෙදර කාන්තාව (Village Housewife)",
+      role: "Character Dialogue",
+      description: "The distressed village housewife whose goat is trapped in the clay pot",
+      voiceName: "Aoede",
+      voiceGender: "female",
+      voiceStyle: "anxious, expressive female villager",
     },
     {
       id: "mahadenamutta",
@@ -277,7 +226,8 @@ export const MAHADENAMUTTA_STORYBOOK: Storybook = {
       role: "Character Dialogue",
       description: "The pompous, literal-minded village sage who consults his palm-leaf book for every crisis",
       voiceName: "Charon",
-      voiceStyle: "solemn, pedantic, self-important elder sage",
+      voiceGender: "male",
+      voiceStyle: "deep baritone, solemn, self-important elder sage",
     },
     {
       id: "polbaa_muna",
@@ -285,7 +235,8 @@ export const MAHADENAMUTTA_STORYBOOK: Storybook = {
       role: "Character Dialogue",
       description: "Mahadenamutta’s most eager and gullible disciple",
       voiceName: "Puck",
-      voiceStyle: "eager, deferential disciple",
+      voiceGender: "male",
+      voiceStyle: "lively male tenor, eager disciple",
     },
   ],
   pages: [
@@ -319,37 +270,40 @@ export const MAHADENAMUTTA_STORYBOOK: Storybook = {
       ],
       dialogueLines: [
         {
-          speaker: "කථකයා (Narrator)",
-          speakerLabel: "කථකයා · NARRATOR",
-          voiceRoleLabel: "Sinhala Literary Narration",
+          speaker: "කථකාවිය (Narrator)",
+          speakerLabel: "කථකාවිය · NARRATOR (♀ FEMALE)",
+          voiceRoleLabel: "Female Literary Narration",
           isDialogue: false,
           voiceName: "Kore",
-          text: "එකමත් එක කාලෙක මහදැනමුත්තා සහ ඔහුගේ ගෝලයෝ පස්දෙනා ගම හරහා ගමන් කරමින් සිටියහ. (Once upon a time, the great sage Mahadenamutta and his five disciples were walking through a quiet village.)",
+          voiceGender: "female",
+          text: "එකමත් එක කාලෙක මහදැනමුත්තා සහ ඔහුගේ ගෝලයෝ පස්දෙනා ගම හරහා ගමන් කරමින් සිටියහ.",
           ttsText:
-            "එකමත් එක කාලෙක මහදැනමුත්තා සහ ඔහුගේ ගෝලයෝ පස්දෙනා ගම හරහා ගමන් කරමින් සිටියහ. Once upon a time, the sage Mahadenamutta and his five disciples were walking through a quiet village.",
-          durationSeconds: 10.5,
+            "එකමත් එක කාලෙක මහදැනමුත්තා සහ ඔහුගේ ගෝලයෝ පස්දෙනා ගම හරහා ගමන් කරමින් සිටියහ.",
+          durationSeconds: 7.5,
         },
         {
-          speaker: "කථකයා (Narrator)",
-          speakerLabel: "කථකයා · NARRATOR",
-          voiceRoleLabel: "Sinhala Literary Narration",
-          isDialogue: false,
-          voiceName: "Kore",
-          text: "ගමේ ගෙදරක එළුවෙක් මැටි මුට්ටියක් ඇතුළට ඔළුව දමාගෙන ආපසු ගන්නට බැරිව දඟලමින් සිටියේය. (In a village courtyard, a goat had thrust its head into a clay pot and could not pull it out again.)",
+          speaker: "ගෙදර කාන්තාව (Village Housewife)",
+          speakerLabel: "ගෙදර කාන්තාව · HOUSEWIFE",
+          voiceRoleLabel: "Female Character Dialogue",
+          isDialogue: true,
+          voiceName: "Aoede",
+          voiceGender: "female",
+          text: "“අනේ මහදැනමුත්තේ, අපේ එළුවා මැටි මුට්ටිය ඇතුළට ඔළුව දමාගෙන ආපසු ගන්නට බැරිව දඟලනවා!”",
           ttsText:
-            "ගමේ ගෙදරක එළුවෙක් මැටි මුට්ටියක් ඇතුළට ඔළුව දමාගෙන ආපසු ගන්නට බැරිව දඟලමින් සිටියේය.",
-          durationSeconds: 9.2,
+            "අනේ මහදැනමුත්තේ, අපේ එළුවා මැටි මුට්ටිය ඇතුළට ඔළුව දමාගෙන ආපසු ගන්නට බැරිව දඟලනවා!",
+          durationSeconds: 7.8,
         },
         {
           speaker: "පොල්බෑ මූණා (Polbää Muna)",
           speakerLabel: "පොල්බෑ මූණා · POLBÄÄ MUNA",
-          voiceRoleLabel: "Character Dialogue",
+          voiceRoleLabel: "Male Character Dialogue",
           isDialogue: true,
           voiceName: "Puck",
-          text: "“ගුරුතුමනි, මේ අසරණ එළුවා මුට්ටියෙන් බේරාගන්නේ කෙසේදැයි පුස්කොළ පොත බලා වදාළ මැනවි!” (“Master! Please consult the sacred ola-leaf book and tell us how to free this poor goat from the clay pot!”)",
+          voiceGender: "male",
+          text: "“ගුරුතුමනි, මේ අසරණ එළුවා මුට්ටියෙන් බේරාගන්නේ කෙසේදැයි පුස්කොළ පොත බලා වදාළ මැනවි!”",
           ttsText:
             "ගුරුතුමනි, මේ අසරණ එළුවා මුට්ටියෙන් බේරාගන්නේ කෙසේදැයි පුස්කොළ පොත බලා වදාළ මැනවි!",
-          durationSeconds: 8.4,
+          durationSeconds: 7.6,
         },
       ],
     },
@@ -378,24 +332,26 @@ export const MAHADENAMUTTA_STORYBOOK: Storybook = {
         {
           speaker: "මහදැනමුත්තා (Mahadenamutta)",
           speakerLabel: "මහදැනමුත්තා · MAHADENAMUTTA",
-          voiceRoleLabel: "Character Dialogue",
+          voiceRoleLabel: "Male Character Dialogue",
           isDialogue: true,
           voiceName: "Charon",
-          text: "“ගෝලයෙනි, පොතේ හැටියට නම් මුලින්ම එළුවාගේ බෙල්ල කපා කඳ වෙන් කළ යුතුයි. එවිට මුට්ටියට හානියක් නොවෙයි!” (“Disciples! According to the manuscript, you must first sever the goat’s neck—that way the clay pot will remain unharmed!”)",
+          voiceGender: "male",
+          text: "“ගෝලයෙනි, පොතේ හැටියට නම් මුලින්ම එළුවාගේ බෙල්ල කපා කඳ වෙන් කළ යුතුයි. එවිට මුට්ටියට හානියක් නොවෙයි!”",
           ttsText:
             "ගෝලයෙනි, පොතේ හැටියට නම් මුලින්ම එළුවාගේ බෙල්ල කපා කඳ වෙන් කළ යුතුයි. එවිට මුට්ටියට හානියක් නොවෙයි!",
-          durationSeconds: 9.8,
+          durationSeconds: 8.5,
         },
         {
-          speaker: "කථකයා (Narrator)",
-          speakerLabel: "කථකයා · NARRATOR",
-          voiceRoleLabel: "Sinhala Literary Narration",
+          speaker: "කථකාවිය (Narrator)",
+          speakerLabel: "කථකාවිය · NARRATOR (♀ FEMALE)",
+          voiceRoleLabel: "Female Literary Narration",
           isDialogue: false,
           voiceName: "Kore",
-          text: "එළුවාගේ බෙල්ල කැපූ පසුත් ඔළුව මුට්ටිය ඇතුළේ හිරවී තිබුණි. ඊළඟට මහදැනමුත්තා අණ කළේ මුට්ටිය ගලකින් ගසා බිඳ දමන ලෙසයි! (Yet the head remained inside the pot—whereupon Mahadenamutta solemnly ordered them to smash the pot with a stone, losing both goat and pot alike!)",
+          voiceGender: "female",
+          text: "එළුවාගේ බෙල්ල කැපූ පසුත් ඔළුව මුට්ටිය ඇතුළේ හිරවී තිබුණි. ඊළඟට මහදැනමුත්තා අණ කළේ මුට්ටිය ගලකින් ගසා බිඳ දමන ලෙසයි!",
           ttsText:
             "එළුවාගේ බෙල්ල කැපූ පසුත් ඔළුව මුට්ටිය ඇතුළේ හිරවී තිබුණි. ඊළඟට මහදැනමුත්තා අණ කළේ මුට්ටිය ගලකින් ගසා බිඳ දමන ලෙසයි!",
-          durationSeconds: 10.6,
+          durationSeconds: 9.2,
         },
       ],
     },
@@ -424,16 +380,26 @@ export const ANDARE_SUGAR_STORYBOOK: Storybook = {
   backgroundMusicUrl:
     "https://www.gstatic.com/aistudio/starter-apps/audio-storybooks/music/03_alice_in_wonderland_lyria.mp3",
   titleCardEndSec: 2.6,
-  totalDurationSeconds: 68.0,
+  totalDurationSeconds: 76.0,
   modelsUsed: DEFAULT_SINHALA_MODELS,
   characters: [
     {
-      id: "andare_narrator",
-      name: "කථකයා (Narrator)",
+      id: "kandy_narrator",
+      name: "කථකාවිය (Narrator)",
       role: "Literary Narration",
-      description: "Chronicler of the Kandyan Royal Court",
+      description: "Female chronicler of the Kandyan Royal Court",
       voiceName: "Kore",
-      voiceStyle: "poised, amused courtly storytelling",
+      voiceGender: "female",
+      voiceStyle: "poised female courtly storytelling",
+    },
+    {
+      id: "king_of_kandy",
+      name: "මහ රජතුමා (King of Kandy)",
+      role: "Character Dialogue",
+      description: "The monarch of the Kandyan Kingdom",
+      voiceName: "Charon",
+      voiceGender: "male",
+      voiceStyle: "deep baritone, regal and amused monarch",
     },
     {
       id: "andare",
@@ -441,7 +407,17 @@ export const ANDARE_SUGAR_STORYBOOK: Storybook = {
       role: "Character Dialogue",
       description: "The legendary poet and witty court jester of the Sinhala king",
       voiceName: "Puck",
-      voiceStyle: "quick-witted, theatrical, mock-tragical",
+      voiceGender: "male",
+      voiceStyle: "lively male tenor, quick-witted court jester",
+    },
+    {
+      id: "queen_of_kandy",
+      name: "රජ බිසව (Queen of Kandy)",
+      role: "Character Dialogue",
+      description: "The Queen of Kandy watching from the palace balcony",
+      voiceName: "Aoede",
+      voiceGender: "female",
+      voiceStyle: "bright, amused royal female voice",
     },
   ],
   pages: [
@@ -475,37 +451,52 @@ export const ANDARE_SUGAR_STORYBOOK: Storybook = {
       ],
       dialogueLines: [
         {
-          speaker: "කථකයා (Narrator)",
-          speakerLabel: "කථකයා · NARRATOR",
-          voiceRoleLabel: "Sinhala Literary Narration",
+          speaker: "කථකාවිය (Narrator)",
+          speakerLabel: "කථකාවිය · NARRATOR (♀ FEMALE)",
+          voiceRoleLabel: "Female Literary Narration",
           isDialogue: false,
           voiceName: "Kore",
-          text: "දිනක් මහනුවර රජවාසලේ මිදුලේ විශාල පැදුරක් මත සුදු සීනි අව්වේ වේලෙන්නට දමා තිබුණි. (One sunny morning in the royal courtyard of Kandy, fine white sugar had been spread upon a woven mat to dry.)",
+          voiceGender: "female",
+          text: "දිනක් මහනුවර රජවාසලේ මිදුලේ විශාල පැදුරක් මත සුදු සීනි අව්වේ වේලෙන්නට දමා තිබුණි.",
           ttsText:
             "දිනක් මහනුවර රජවාසලේ මිදුලේ විශාල පැදුරක් මත සුදු සීනි අව්වේ වේලෙන්නට දමා තිබුණි.",
-          durationSeconds: 9.4,
+          durationSeconds: 7.5,
+        },
+        {
+          speaker: "මහ රජතුමා (King of Kandy)",
+          speakerLabel: "මහ රජතුමා · KING OF KANDY",
+          voiceRoleLabel: "Male Character Dialogue",
+          isDialogue: true,
+          voiceName: "Charon",
+          voiceGender: "male",
+          text: "“අන්දරේ, ඔය පැදුරේ තිබෙන්නේ සීනි නොවෙයි, අපේ රජවාසලේ මිදුලට දමන සුදු වැලි පමණයි!”",
+          ttsText:
+            "අන්දරේ, ඔය පැදුරේ තිබෙන්නේ සීනි නොවෙයි, අපේ රජවාසලේ මිදුලට දමන සුදු වැලි පමණයි!",
+          durationSeconds: 7.8,
         },
         {
           speaker: "අන්දරේ (Andare)",
           speakerLabel: "අන්දරේ · ANDARE",
-          voiceRoleLabel: "Character Dialogue",
+          voiceRoleLabel: "Male Character Dialogue",
           isDialogue: true,
           voiceName: "Puck",
-          text: "“මහරජතුමනි, මේ පැදුරේ තිබෙන්නේ කුමක්ද?” රජතුමා සිනාසී “අන්දරේ, ඒ රජවාසලේ සුදු වැලි” යැයි කීවේය. (“Your Majesty, what lies upon this mat?” The King smiled and replied, “Andare, that is merely white courtyard sand.”)",
+          voiceGender: "male",
+          text: "“අනේ පුතේ, උඹේ අම්මා මැරුණා! අපි දෙන්නාම මේ සුදු වැලි කා මැරෙමු!” කියමින් අන්දරේ පුතු සමඟ දෝතින්ම සීනි කෑවේය.",
           ttsText:
-            "මහරජතුමනි, මේ පැදුරේ තිබෙන්නේ කුමක්ද? රජතුමා සිනාසී අන්දරේ, ඒ රජවාසලේ සුදු වැලි යැයි කීවේය.",
-          durationSeconds: 9.8,
+            "අනේ පුතේ, උඹේ අම්මා මැරුණා! අපි දෙන්නාම මේ සුදු වැලි කා මැරෙමු! කියමින් අන්දරේ පුතු සමඟ දෝතින්ම සීනි කෑවේය.",
+          durationSeconds: 8.8,
         },
         {
-          speaker: "අන්දරේ (Andare)",
-          speakerLabel: "අන්දරේ · ANDARE",
-          voiceRoleLabel: "Character Dialogue",
+          speaker: "රජ බිසව (Queen of Kandy)",
+          speakerLabel: "රජ බිසව · QUEEN OF KANDY",
+          voiceRoleLabel: "Female Character Dialogue",
           isDialogue: true,
-          voiceName: "Puck",
-          text: "අන්දරේ තම කුඩා පුතු සමඟ පැමිණ, “අනේ පුතේ, උඹේ අම්මා මැරුණා! අපි දෙන්නාම මේ සුදු වැලි කා මැරෙමු!” කියමින් දෝතින්ම සීනි කෑවේය. (Returning with his young son, Andare cried out in mock grief, “Alas my son, let us eat this royal sand and perish together!”—and both feasted heartily upon the King’s sugar.)",
+          voiceName: "Aoede",
+          voiceGender: "female",
+          text: "“මහරජතුමනි, අන්දරේගේ කපටි නුවණට නම් කිසිවෙකුටත් දිනන්නට බැහැ!”",
           ttsText:
-            "අන්දරේ තම කුඩා පුතු සමඟ පැමිණ, අනේ පුතේ, උඹේ අම්මා මැරුණා! අපි දෙන්නාම මේ සුදු වැලි කා මැරෙමු! කියමින් දෝතින්ම සීනි කෑවේය.",
-          durationSeconds: 11.2,
+            "මහරජතුමනි, අන්දරේගේ කපටි නුවණට නම් කිසිවෙකුටත් දිනන්නට බැහැ!",
+          durationSeconds: 6.8,
         },
       ],
     },
@@ -534,7 +525,7 @@ export const MADOL_DOOVA_STORYBOOK: Storybook = {
   backgroundMusicUrl:
     "https://www.gstatic.com/aistudio/starter-apps/audio-storybooks/music/05_tom_sawyer_lyria.mp3",
   titleCardEndSec: 2.6,
-  totalDurationSeconds: 70.0,
+  totalDurationSeconds: 74.0,
   modelsUsed: DEFAULT_SINHALA_MODELS,
   characters: [
     {
@@ -543,7 +534,17 @@ export const MADOL_DOOVA_STORYBOOK: Storybook = {
       role: "First-Person Narrator",
       description: "Upali Ginivella — spirited hero and narrator of Martin Wickramasinghe’s Madol Doova",
       voiceName: "Fenrir",
-      voiceStyle: "spirited, reflective, adventurous southern-coast youth",
+      voiceGender: "male",
+      voiceStyle: "spirited male baritone, adventurous southern-coast youth",
+    },
+    {
+      id: "sudu_nanda",
+      name: "සුදු නැන්දා (Sudu Nanda)",
+      role: "Character Dialogue",
+      description: "Upali’s gentle, worried stepmother in the coastal village",
+      voiceName: "Aoede",
+      voiceGender: "female",
+      voiceStyle: "warm, concerned female voice",
     },
     {
       id: "jinapala",
@@ -551,7 +552,8 @@ export const MADOL_DOOVA_STORYBOOK: Storybook = {
       role: "Character Dialogue",
       description: "Upali’s loyal friend and companion on the island of Madol Doova",
       voiceName: "Orus",
-      voiceStyle: "resourceful, steady, determined companion",
+      voiceGender: "male",
+      voiceStyle: "steady male voice, resourceful companion",
     },
   ],
   pages: [
@@ -586,26 +588,40 @@ export const MADOL_DOOVA_STORYBOOK: Storybook = {
       ],
       dialogueLines: [
         {
+          speaker: "සුදු නැන්දා (Sudu Nanda)",
+          speakerLabel: "සුදු නැන්දා · SUDU NANDA",
+          voiceRoleLabel: "Female Character Dialogue",
+          isDialogue: true,
+          voiceName: "Aoede",
+          voiceGender: "female",
+          text: "“උපාලිත් ජිනපාලත් අද උදේ පාන්දරම ඔරුව අරගෙන කොහේ ගියාදැයි සිතාගන්නවත් බැහැ!”",
+          ttsText:
+            "උපාලිත් ජිනපාලත් අද උදේ පාන්දරම ඔරුව අරගෙන කොහේ ගියාදැයි සිතාගන්නවත් බැහැ!",
+          durationSeconds: 7.4,
+        },
+        {
           speaker: "උපාලි ගිනිවැල්ල (Upali Ginivella)",
           speakerLabel: "උපාලි · UPALI GINIVELLA",
-          voiceRoleLabel: "First-Person Narration",
+          voiceRoleLabel: "Male First-Person Narration",
           isDialogue: false,
           voiceName: "Fenrir",
-          text: "කොග්ගල ඔයේ නිසල ජලය මතින් අපේ කුඩා ඔරුව මඩොල් දූව දෙසට ඇදී ගියේය. (Across the still waters of Koggala lagoon, our small outrigger canoe glided toward the tangled mangrove shores of Madol Doova.)",
+          voiceGender: "male",
+          text: "කොග්ගල ඔයේ නිසල ජලය මතින් අපේ කුඩා ඔරුව මඩොල් දූව දෙසට ඇදී ගියේය.",
           ttsText:
             "කොග්ගල ඔයේ නිසල ජලය මතින් අපේ කුඩා ඔරුව මඩොල් දූව දෙසට ඇදී ගියේය.",
-          durationSeconds: 9.5,
+          durationSeconds: 7.6,
         },
         {
           speaker: "ජිනපාල (Jinapala)",
           speakerLabel: "ජිනපාල · JINAPALA",
-          voiceRoleLabel: "Character Dialogue",
+          voiceRoleLabel: "Male Character Dialogue",
           isDialogue: true,
           voiceName: "Orus",
-          text: "“උපාලි, මේ දූපතේ හොල්මන් ඉන්නවා කියලා ගම්මු බය වුණාට, අපිට නම් මේක කදිම නිවහනක්!” (“Upali, even if the villagers fear ghosts among these mangroves, for the two of us this island will be a splendid refuge!”)",
+          voiceGender: "male",
+          text: "“උපාලි, මේ දූපතේ හොල්මන් ඉන්නවා කියලා ගම්මු බය වුණාට, අපිට නම් මේක කදිම නිවහනක්!”",
           ttsText:
             "උපාලි, මේ දූපතේ හොල්මන් ඉන්නවා කියලා ගම්මු බය වුණාට, අපිට නම් මේක කදිම නිවහනක්!",
-          durationSeconds: 9.8,
+          durationSeconds: 8.2,
         },
       ],
     },
@@ -634,16 +650,17 @@ export const GUTTILA_JATAKAYA_STORYBOOK: Storybook = {
   backgroundMusicUrl:
     "https://www.gstatic.com/aistudio/starter-apps/audio-storybooks/music/04_the_time_machine_lyria.mp3",
   titleCardEndSec: 2.6,
-  totalDurationSeconds: 66.0,
+  totalDurationSeconds: 72.0,
   modelsUsed: DEFAULT_SINHALA_MODELS,
   characters: [
     {
-      id: "guttila_narrator",
-      name: "කාව්‍ය කථකයා (Poetic Narrator)",
+      id: "jataka_narrator",
+      name: "කාව්‍ය කථකාවිය (Poetic Narrator)",
       role: "Classical Narration",
-      description: "Reciter of the Kotte-era Guttila Kavya",
-      voiceName: "Kore",
-      voiceStyle: "lyrical, resonant classical Sinhala cadence",
+      description: "Female reciter of the Kotte-era Guttila Kavya",
+      voiceName: "Aoede",
+      voiceGender: "female",
+      voiceStyle: "lyrical female soprano, classical Sinhala poetic cadence",
     },
     {
       id: "master_guttila",
@@ -651,7 +668,17 @@ export const GUTTILA_JATAKAYA_STORYBOOK: Storybook = {
       role: "Character Dialogue",
       description: "The Bodhisattva master musician of the seven-stringed veena",
       voiceName: "Charon",
-      voiceStyle: "serene, noble, masterly",
+      voiceGender: "male",
+      voiceStyle: "deep male baritone, serene, noble, masterly",
+    },
+    {
+      id: "musila",
+      name: "මූසිල (Musila)",
+      role: "Character Dialogue",
+      description: "The ambitious veena pupil from Ujjeni",
+      voiceName: "Puck",
+      voiceGender: "male",
+      voiceStyle: "proud male tenor, astonished",
     },
   ],
   pages: [
@@ -685,26 +712,40 @@ export const GUTTILA_JATAKAYA_STORYBOOK: Storybook = {
       ],
       dialogueLines: [
         {
-          speaker: "කාව්‍ය කථකයා (Poetic Narrator)",
-          speakerLabel: "කථකයා · POETIC NARRATOR",
-          voiceRoleLabel: "Classical Sinhala Narration",
+          speaker: "කාව්‍ය කථකාවිය (Poetic Narrator)",
+          speakerLabel: "කාව්‍ය කථකාවිය · POETIC NARRATOR",
+          voiceRoleLabel: "Female Classical Narration",
           isDialogue: false,
-          voiceName: "Kore",
-          text: "රාජසභා මණ්ඩපයේදී ගුත්තිල ඇදුරිඳු තම සත්තන්ත්‍රී වීණාව සුසර කළේය. (Beneath the royal pavilion, Master Guttila tuned his seven-stringed veena before his ungrateful pupil Musila.)",
+          voiceName: "Aoede",
+          voiceGender: "female",
+          text: "රාජසභා මණ්ඩපයේදී ගුත්තිල ඇදුරිඳු තම සත්තන්ත්‍රී වීණාව සුසර කළේය.",
           ttsText:
             "රාජසභා මණ්ඩපයේදී ගුත්තිල ඇදුරිඳු තම සත්තන්ත්‍රී වීණාව සුසර කළේය.",
-          durationSeconds: 9.2,
+          durationSeconds: 7.2,
+        },
+        {
+          speaker: "මූසිල (Musila)",
+          speakerLabel: "මූසිල · MUSILA",
+          voiceRoleLabel: "Male Character Dialogue",
+          isDialogue: true,
+          voiceName: "Puck",
+          voiceGender: "male",
+          text: "“ගුරුතුමනි, අද මේ රාජ සභාවේදී මාගේ වීණා ශිල්පය ඔබට දෙවැනි නොවන බව පෙන්වමි!”",
+          ttsText:
+            "ගුරුතුමනි, අද මේ රාජ සභාවේදී මාගේ වීණා ශිල්පය ඔබට දෙවැනි නොවන බව පෙන්වමි!",
+          durationSeconds: 7.5,
         },
         {
           speaker: "ගුත්තිල ඇදුරිඳු (Master Guttila)",
           speakerLabel: "ගුත්තිල · MASTER GUTTILA",
-          voiceRoleLabel: "Character Dialogue",
+          voiceRoleLabel: "Male Character Dialogue",
           isDialogue: true,
           voiceName: "Charon",
-          text: "“සැබෑ ශිල්පය ඇත්තේ තත් හතේ පමණක් නොව, නිහතමානී හදවතේය.” එකින් එක තත් සිඳ දැමූ පසුත් වීණා කඳෙන් දිව්‍යමය සංගීතය ගලා ආවේය! (“True mastery dwells not merely in the seven strings, but in a humble heart.” And even as he snapped every string one by one, celestial music poured forth from the bare wooden body of the veena!)",
+          voiceGender: "male",
+          text: "“සැබෑ ශිල්පය ඇත්තේ තත් හතේ පමණක් නොව, නිහතමානී හදවතේය.” එකින් එක තත් සිඳ දැමූ පසුත් වීණා කඳෙන් දිව්‍යමය සංගීතය ගලා ආවේය!",
           ttsText:
             "සැබෑ ශිල්පය ඇත්තේ තත් හතේ පමණක් නොව, නිහතමානී හදවතේය. එකින් එක තත් සිඳ දැමූ පසුත් වීණා කඳෙන් දිව්‍යමය සංගීතය ගලා ආවේය!",
-          durationSeconds: 11.4,
+          durationSeconds: 9.8,
         },
       ],
     },
